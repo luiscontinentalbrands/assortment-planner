@@ -100,8 +100,8 @@ th{font:600 11px var(--sans);text-transform:uppercase;letter-spacing:.07em;color
 td.r,th.r{text-align:right}
 tr.group td{background:var(--surface-2);font:700 14px var(--display);text-transform:uppercase;letter-spacing:.06em;padding-top:10px}
 tr.dim td{color:var(--muted)}
-input[type=number],input[type=date],select{font:500 13px var(--mono);color:var(--ink);background:var(--surface);border:1px solid var(--rule);padding:5px 6px;border-radius:2px;min-width:0}
-input[type=number]{width:92px;text-align:right}
+input[inputmode=decimal],input[type=date],select{font:500 13px var(--mono);color:var(--ink);background:var(--surface);border:1px solid var(--rule);padding:5px 6px;border-radius:2px;min-width:0}
+input[inputmode=decimal]{width:92px;text-align:right}
 input.in{background:var(--accent-soft);border-color:transparent}
 input.in:focus{background:var(--surface);border-color:var(--accent)}
 .dots{display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle}
@@ -293,7 +293,7 @@ try{const h=location.hash.slice(1);if(['overview','plan','orders','entry','sched
 const n0=v=>Math.round(v).toLocaleString('en-ZA').replace(/ /g,' ');
 const n1=v=>(Math.round(v*10)/10).toLocaleString('en-ZA',{minimumFractionDigits:1,maximumFractionDigits:1}).replace(/ /g,' ');
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-function num(v){v=parseFloat(v);return isFinite(v)&&v>0?v:0}
+function num(v){v=parseFloat(String(v).replace(/[\s,]/g,''));return isFinite(v)&&v>0?v:0}
 function parseDate(iso){const [y,m,d]=(iso||todayISO()).split('-').map(Number);return new Date(y,m-1,d)}
 function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x}
 function fmtDay(d){return DAYN[d.getDay()]+' '+d.getDate()+' '+MON[d.getMonth()]}
@@ -564,7 +564,7 @@ function vOrders(C){
       const mixTitle=Object.entries(p.x.p.mix).sort((a,b)=>b[1]-a[1]).map(([b,f])=>`${BIS[b].name} ${(f*100).toFixed(1)}% (${LBY[S.lineOf[b]].name})`).join('\n');
       rows.push(`<tr${I?'':' class="dim"'}>
         <td><span class="pname" title="${esc(mixTitle)}">${esc(p.x.p.name)}</span><span class="dots">${p.lineSet.map(l=>lineDot(l)).join('')}</span><div class="muted" style="font-size:11px">${p.x.p.caseKg} kg/case · ${Object.keys(p.x.p.mix).length} biscuits</div></td>
-        <td class="r"><input class="in" type="number" min="0" step="1" id="c-${id}" data-o="${id}" data-f="cases" value="${num(o.cases)||''}" placeholder="0" aria-label="Cases required"></td>
+        <td class="r"><input class="in" type="text" inputmode="decimal" autocomplete="off" min="0" step="1" id="c-${id}" data-o="${id}" data-f="cases" value="${num(o.cases)||''}" placeholder="0" aria-label="Cases required"></td>
         <td class="r num">${n0(C.LG.packed[id]||0)}</td>
         <td><select id="p-${id}" data-o="${id}" data-f="priority" aria-label="Priority">${['High','Normal','Low'].map(v=>`<option${o.priority===v?' selected':''}>${v}</option>`).join('')}</select></td>
         <td><input type="date" id="d-${id}" data-o="${id}" data-f="due" value="${esc(o.due||'')}" aria-label="Due date"></td>
@@ -678,9 +678,9 @@ function vSchedule(C){
       <div class="field"><b>Working days</b><div class="days">${[1,2,3,4,5,6,0].map(d=>`<button data-wd="${d}" aria-pressed="${st.workDays.includes(d)}">${DAYN[d]}</button>`).join('')}</div></div>
       <div class="field"><b>Timing</b><div class="days mode">${[['jit','Just in time'],['asap','As soon as possible']].map(([k,t])=>`<button data-mode="${k}" aria-pressed="${(st.mode||'jit')===k}">${t}</button>`).join('')}</div></div>
       <div class="field"><b>Run order on each line</b><div class="days mode">${[['stock','Lowest stock first'],['urgent','Most urgent order first']].map(([k,t])=>`<button data-ro="${k}" aria-pressed="${(st.runOrder||'stock')===k}">${t}</button>`).join('')}</div></div>
-      <label class="field"><b>Ready before packing (h)</b><input type="number" min="0" step="1" id="set-buf" data-s="buffer" value="${num(st.buffer)}" style="width:70px"></label>
-      <label class="field"><b>Changeover (h)</b><input type="number" min="0" step="0.25" id="set-co" data-s="changeover" value="${num(st.changeover)}" style="width:70px"></label>
-      <div class="field"><b>Hours per day, by line</b><div class="hpd">${LINES.map(L=>`<label>${lineDot(L.id)}${L.name}<input type="number" min="0" max="24" step="1" id="hpd-${L.id}" data-h="${L.id}" value="${num(st.hpd[L.id])}"></label>`).join('')}</div></div>
+      <label class="field"><b>Ready before packing (h)</b><input type="text" inputmode="decimal" autocomplete="off" min="0" step="1" id="set-buf" data-s="buffer" value="${num(st.buffer)}" style="width:70px"></label>
+      <label class="field"><b>Changeover (h)</b><input type="text" inputmode="decimal" autocomplete="off" min="0" step="0.25" id="set-co" data-s="changeover" value="${num(st.changeover)}" style="width:70px"></label>
+      <div class="field"><b>Hours per day, by line</b><div class="hpd">${LINES.map(L=>`<label>${lineDot(L.id)}${L.name}<input type="text" inputmode="decimal" autocomplete="off" min="0" max="24" step="1" id="hpd-${L.id}" data-h="${L.id}" value="${num(st.hpd[L.id])}"></label>`).join('')}</div></div>
     </div>
   </section>
   <section style="display:grid;gap:8px"><h2>Line schedule</h2>
@@ -716,14 +716,14 @@ function vEntry(C){
       return `<tr class="group"><td colspan="5">${lineDot(L.id)} ${L.name}</td></tr>`+list.map(b=>{
         const m=num(e.made&&e.made[b.id]), u=use[b.id]||0, left=start[b.id]+m-u; kgMade+=m; kgUsed+=u; if(left<-0.5) neg++;
         return `<tr${left<-0.5?' class="pos-short"':''}><td>${esc(b.name)}</td><td class="r num">${n0(start[b.id])}</td>
-        <td class="r"><input class="in" type="number" min="0" step="1" id="mk-${b.id}" data-mk="${b.id}" value="${m||''}" placeholder="0" aria-label="Kg produced"></td>
+        <td class="r"><input class="in" type="text" inputmode="decimal" autocomplete="off" min="0" step="1" id="mk-${b.id}" data-mk="${b.id}" value="${m||''}" placeholder="0" aria-label="Kg produced"></td>
         <td class="r num">${u>0.5?'−'+n0(u):'<span class="muted">0</span>'}</td>
         <td class="r num"><b${left<-0.5?' style="color:var(--bad)"':''}>${n0(left)}</b>${left<-0.5?' <span class="chip bad">Not enough</span>':''}</td></tr>`}).join('')}).join('');
     const plist=SEED.products.filter(p=>entryAll||num(S.orders[p.id].cases)>0||num(e.packed&&e.packed[p.id])>0);
     const pRows=plist.map(p=>{const c=num(e.packed&&e.packed[p.id]);cases+=c;const out=Math.max(0,num(S.orders[p.id].cases)-(LG.packed[p.id]||0));
       const kg=c*p.caseKg;
       return `<tr><td><span class="pname">${esc(p.name)}</span><div class="muted" style="font-size:11px">${p.caseKg} kg/case · ${n0(out)} cs outstanding</div></td>
-      <td class="r"><input class="in" type="number" min="0" step="1" id="pk-${p.id}" data-pk="${p.id}" value="${c||''}" placeholder="0" aria-label="Cases packed"></td>
+      <td class="r"><input class="in" type="text" inputmode="decimal" autocomplete="off" min="0" step="1" id="pk-${p.id}" data-pk="${p.id}" value="${c||''}" placeholder="0" aria-label="Cases packed"></td>
       <td class="r num">${c?n0(kg):'<span class="muted">0</span>'}</td></tr>`}).join('');
     body=`<section class="panel" style="gap:10px">
       <div class="toolbar"><div class="grp"><button class="btn" data-ed="-1" aria-label="Previous day">‹</button><input type="date" id="entry-date" value="${d}" aria-label="Entry date"><button class="btn" data-ed="1" aria-label="Next day">›</button>${d!==todayISO()?'<button class="btn" data-ed="0">Today</button>':''}<b style="font:600 18px var(--display);text-transform:uppercase;letter-spacing:.04em">${fmtDay(parseDate(d))}</b></div>
@@ -748,7 +748,7 @@ function vEntry(C){
         const o=num(S.opening.stock[b.id]), m=LG.made[b.id], u=LG.used[b.id], h=LG.onHand[b.id], c=C.bis[b.id], pos=stockPos(c);
         tO+=o;tM+=m;tU+=u;tH+=h;
         return `<tr class="pos-${h<-0.5?'short':pos.k}"><td>${esc(b.name)}</td>
-        <td class="r"><input class="in" type="number" min="0" step="1" id="os-${b.id}" data-os="${b.id}" value="${o}" aria-label="Opening stock"></td>
+        <td class="r"><input class="in" type="text" inputmode="decimal" autocomplete="off" min="0" step="1" id="os-${b.id}" data-os="${b.id}" value="${o}" aria-label="Opening stock"></td>
         <td class="r num">${m?'+'+n0(m):'<span class="muted">0</span>'}</td><td class="r num">${u>0.5?'−'+n0(u):'<span class="muted">0</span>'}</td>
         <td class="r num"><b${h<-0.5?' style="color:var(--bad)"':''}>${n0(h)}</b></td><td class="r num">${n0(c.req)}</td>
         <td>${pos.k==='none'?'<span class="muted">—</span>':`<span class="chip ${pos.k==='short'?'bad':pos.k==='over'?'over':'ok'}">${pos.label}</span>`}</td></tr>`}).join('')}).join('');
@@ -857,7 +857,7 @@ function vStock(C){
       <td class="posbar"><div class="pb" title="Stock ${n0(c.stock)} kg · needed ${n0(c.req)} kg"><i class="pb-s" style="width:${sw}%"></i>${c.req>0?`<i class="pb-r" style="left:${rw}%"></i>`:''}</div></td>
       <td class="r num"><b>${pos.k==='none'?'—':(pos.diff>=0?'+':'−')+n0(Math.abs(pos.diff))}</b></td>
       <td>${pos.k==='none'?'<span class="muted">—</span>':`<span class="chip ${pos.k==='short'?'bad':pos.k==='over'?'over':'ok'}">${pos.label}${pos.k==='short'&&c.req>0?' · '+Math.round(c.stock/c.req*100)+'%':''}</span>`}</td>
-      <td class="r"><input type="number" min="0" step="1" id="r-${b.id}" data-rt="${b.id}" value="${num(S.rates[b.id])}" aria-label="Kg per hour"></td>
+      <td class="r"><input type="text" inputmode="decimal" autocomplete="off" min="0" step="1" id="r-${b.id}" data-rt="${b.id}" value="${num(S.rates[b.id])}" aria-label="Kg per hour"></td>
       <td><select id="l-${b.id}" data-l="${b.id}" aria-label="Line">${LINES.map(z=>`<option value="${z.id}"${S.lineOf[b.id]===z.id?' selected':''}>${z.name}</option>`).join('')}</select></td></tr>`}).join('');
   }).join('');
   return `<div class="toolbar"><div class="grp"><h2>Stock by line</h2><span class="muted">Stock on hand (opening stock + kg produced − kg used by packing) against what the outstanding orders need. Enter stock on the Stock &amp; daily entry page.</span></div>
@@ -866,7 +866,7 @@ function vStock(C){
   ${casesTable(C)}
   <h2 style="margin-top:6px">Biscuit stock</h2>
   <div class="toolbar"><div class="grp"><div class="days mode">${[['all','All'],['short','Short'],['over','Overstocked'],['ok','OK']].map(([k,t])=>`<button data-sf="${k}" aria-pressed="${stockFilter===k}">${t}</button>`).join('')}</div>
-  <label class="field" style="flex-direction:row;display:flex;align-items:center;gap:8px"><b>Overstocked above</b><input type="number" min="100" step="10" id="set-over" data-s="overPct" value="${overPct}" style="width:70px"> % of need</label></div>
+  <label class="field" style="flex-direction:row;display:flex;align-items:center;gap:8px"><b>Overstocked above</b><input type="text" inputmode="decimal" autocomplete="off" min="100" step="10" id="set-over" data-s="overPct" value="${overPct}" style="width:70px"> % of need</label></div>
   <div class="legend"><span><i class="sw" style="background:var(--bad)"></i> Short</span><span><i class="sw" style="background:var(--ok)"></i> OK</span><span><i class="sw" style="background:var(--over)"></i> Overstocked or not used by any order</span><span><i class="sw" style="background:var(--ink);width:2px"></i> Needed</span></div></div>
   <div class="tablebox"><table>
   <thead><tr><th>Biscuit</th><th class="r">Stock on hand (kg)</th><th class="r">Needed (kg)</th><th style="min-width:160px">Stock vs need</th><th class="r">Short / over (kg)</th><th>Position</th><th class="r">Kg per hour</th><th>Line</th></tr></thead>
@@ -879,17 +879,17 @@ function vNotes(C){
   const head=`<section class="toolbar"><div class="grp"><h2>Data notes</h2><span class="muted">Reference data behind the plan. Shaded cells can be edited.</span></div><div class="grp">${seg}</div></section>`;
   if(notesView==='repack'){
     const rows=['Sweet','Savoury'].map(cat=>`<tr class="group"><td colspan="2">${cat}</td></tr>`+SEED.products.filter(p=>p.cat===cat).map(p=>{const r=num(S.ref.repack[p.id]);
-      return `<tr><td>${esc(p.name)}</td><td class="r"><input class="in" type="number" min="0" step="1" id="rp-${p.id}" data-rp="${p.id}" value="${r||''}" placeholder="—" aria-label="Cases per hour"></td></tr>`}).join('')).join('');
+      return `<tr><td>${esc(p.name)}</td><td class="r"><input class="in" type="text" inputmode="decimal" autocomplete="off" min="0" step="1" id="rp-${p.id}" data-rp="${p.id}" value="${r||''}" placeholder="—" aria-label="Cases per hour"></td></tr>`}).join('')).join('');
     return head+`<div class="tablebox" style="max-width:620px"><table class="compact" style="min-width:0"><thead><tr><th>Product</th><th class="r">Repacking (cases per hour)</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   if(notesView==='crates'){
     const rows=LINES.map(L=>`<tr class="group"><td colspan="2">${lineDot(L.id)} ${L.name}</td></tr>`+SEED.biscuits.filter(b=>S.lineOf[b.id]===L.id).map(b=>{const k=num(S.ref.crate[b.id]);
-      return `<tr><td>${esc(b.name)}</td><td class="r"><input class="in" type="number" min="0" step="0.1" id="cr-${b.id}" data-cr="${b.id}" value="${k||''}" aria-label="Kg per crate"></td></tr>`}).join('')).join('');
+      return `<tr><td>${esc(b.name)}</td><td class="r"><input class="in" type="text" inputmode="decimal" autocomplete="off" min="0" step="0.1" id="cr-${b.id}" data-cr="${b.id}" value="${k||''}" aria-label="Kg per crate"></td></tr>`}).join('')).join('');
     return head+`<div class="tablebox" style="max-width:620px"><table class="compact" style="min-width:0"><thead><tr><th>Biscuit</th><th class="r">Crate weight (kg)</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   if(notesView==='pieces'){
     const rows=LINES.map(L=>`<tr class="group"><td colspan="6">${lineDot(L.id)} ${L.name}</td></tr>`+SEED.biscuits.filter(b=>S.lineOf[b.id]===L.id).map(b=>{const g=num(S.ref.pieceG[b.id]);const k=num(S.ref.crate[b.id]);const r=num(S.rates[b.id]);
-      return `<tr><td>${esc(b.name)}</td><td class="r"><input class="in" type="number" min="0" step="0.1" id="pg-${b.id}" data-pg="${b.id}" value="${g||''}" placeholder="—" aria-label="Grams per biscuit"></td>
+      return `<tr><td>${esc(b.name)}</td><td class="r"><input class="in" type="text" inputmode="decimal" autocomplete="off" min="0" step="0.1" id="pg-${b.id}" data-pg="${b.id}" value="${g||''}" placeholder="—" aria-label="Grams per biscuit"></td>
       <td class="r num">${g?n0(1000/g):'—'}</td><td class="r num">${g&&k?n0(k*1000/g):'—'}</td><td class="r num">${n1(r)}</td><td class="r num">${g?n0(r*1000/g):'—'}</td></tr>`}).join('')).join('');
     return head+`<div class="tablebox"><table><thead><tr><th>Biscuit</th><th class="r">Weight per biscuit (g)</th><th class="r">Biscuits per kg</th><th class="r">Biscuits per crate</th><th class="r">Kg per hour</th><th class="r">Biscuits per hour</th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="legend"><span>The workbook doesn't hold single-biscuit weights. Enter the average weight of one biscuit in grams and the page works out counts per kg, crate, hour and pack.</span></div>`;
@@ -905,8 +905,8 @@ function vNotes(C){
     const opts=['Sweet','Savoury'].map(c=>`<optgroup label="${c}">${SEED.products.filter(x=>x.cat===c).map(x=>`<option value="${x.id}"${x.id===packSel?' selected':''}>${esc(x.name)}${num(S.orders[x.id].cases)?' ●':''}</option>`).join('')}</optgroup>`).join('');
     return head+`<section class="panel" style="gap:12px"><div class="settings">
       <label class="field"><b>Product</b><select id="packSel">${opts}</select></label>
-      <label class="field"><b>Packs / trays per case</b><input class="in" type="number" min="1" step="1" id="pn-${p.id}" data-pn="${p.id}" value="${n||''}" style="width:80px"></label>
-      <label class="field"><b>Pack weight (g)</b><input class="in" type="number" min="1" step="1" id="pw-${p.id}" data-pw="${p.id}" value="${g||''}" style="width:90px"></label>
+      <label class="field"><b>Packs / trays per case</b><input class="in" type="text" inputmode="decimal" autocomplete="off" min="1" step="1" id="pn-${p.id}" data-pn="${p.id}" value="${n||''}" style="width:80px"></label>
+      <label class="field"><b>Pack weight (g)</b><input class="in" type="text" inputmode="decimal" autocomplete="off" min="1" step="1" id="pw-${p.id}" data-pw="${p.id}" value="${g||''}" style="width:90px"></label>
       <div class="field"><b>Case weight</b><span class="num" style="color:var(--ink);font-size:15px">${p.caseKg} kg${n&&g&&Math.abs(n*g/1000-p.caseKg)>0.01?` <span class="chip warn">packs give ${n1(n*g/1000)} kg</span>`:''}</span></div></div>
     <div class="tablebox"><table class="compact"><thead><tr><th>Biscuit</th><th class="r">Share</th><th class="r">Grams per pack</th><th class="r">Biscuits per pack</th><th class="r">Per case (g)</th><th class="r">Per case (kg)</th></tr></thead><tbody>${rows}</tbody>
     <tfoot><tr><td><b>Total per pack</b></td><td class="r num">100%</td><td class="r num"><b>${n1(tg)} g</b></td><td class="r num">${known?'<b>'+n0(tpc)+'</b>':'<span class="muted">add weights</span>'}</td><td class="r num">${n0(p.caseKg*1000)} g</td><td class="r num">${p.caseKg}</td></tr></tfoot></table></div>
@@ -932,12 +932,12 @@ function applyPerms(){
   });
 }
 /* ---------------- focus keeping ---------------- */
-function snapshotFocus(){const a=document.activeElement;if(!a||!a.id)return null;let s=null;try{s=[a.selectionStart,a.selectionEnd]}catch(e){}return {id:a.id,s}}
-function restoreFocus(f){if(!f)return;const el=document.getElementById(f.id);if(!el)return;el.focus({preventScroll:true});try{if(f.s&&f.s[0]!=null)el.setSelectionRange(f.s[0],f.s[1])}catch(e){}}
+function snapshotFocus(){const a=document.activeElement;if(!a||!a.id)return null;let s=null;try{s=[a.selectionStart,a.selectionEnd]}catch(e){}return {id:a.id,s,v:a.tagName==='INPUT'?a.value:null}}
+function restoreFocus(f){if(!f)return;const el=document.getElementById(f.id);if(!el)return;if(f.v!=null&&el.tagName==='INPUT'&&el.type!=='checkbox'&&el.value!==f.v)el.value=f.v;el.focus({preventScroll:true});try{if(f.s&&f.s[0]!=null)el.setSelectionRange(f.s[0],f.s[1])}catch(e){}}
 
 /* ---------------- events ---------------- */
 let rt=null, lastInput=0;
-function changed(){dirty=true;clearTimeout(rt);rt=setTimeout(render,200);queueSave()}
+function changed(){dirty=true;clearTimeout(rt);rt=setTimeout(render,450);queueSave()}
 window.tabGo=t=>{tab=t;pending=null;try{history.replaceState(null,'','#'+t)}catch(_){}render()};
 document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.closest('button[data-t]');if(!b)return;tab=b.dataset.t;pending=null;try{history.replaceState(null,'','#'+tab)}catch(_){}render()});
 $main.addEventListener('input',e=>{
@@ -999,7 +999,7 @@ function setSync(s,txt){const el=document.getElementById('sync');el.dataset.s=s;
 function serial(){return {orders:S.orders,opening:S.opening,rates:S.rates,ref:S.ref,lineOf:S.lineOf,settings:S.settings,onlyActive:S.onlyActive,savedAt:new Date().toISOString()}}
 function saveLocal(){try{localStorage.setItem('alp-plan',JSON.stringify(Object.assign(serial(),{log:S.log})))}catch(e){}}
 let logCol=null, logDirty=new Set(), logTimer=null, logSaving=false;
-function changedLog(d){logDirty.add(d);clearTimeout(rt);rt=setTimeout(render,200);if(!logCol){saveLocal();logDirty.clear();return}setSync('saving','Saving…');clearTimeout(logTimer);logTimer=setTimeout(saveLogs,900)}
+function changedLog(d){logDirty.add(d);clearTimeout(rt);rt=setTimeout(render,450);if(!logCol){saveLocal();logDirty.clear();return}setSync('saving','Saving…');clearTimeout(logTimer);logTimer=setTimeout(saveLogs,900)}
 async function saveLogs(){
   if(logSaving){clearTimeout(logTimer);logTimer=setTimeout(saveLogs,500);return}
   logSaving=true; const ds=[...logDirty]; logDirty.clear();
