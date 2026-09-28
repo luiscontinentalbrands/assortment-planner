@@ -1,5 +1,7 @@
 {
   "rules": {
+    ".read": false,
+    ".write": false,
     "assortment": {
       "meta": {
         ".read": true,
@@ -12,6 +14,7 @@
         "$uid": {
           ".read": "auth != null && auth.uid === $uid",
           ".write": "(auth != null && root.child('assortment/users/'+auth.uid).exists() && root.child('assortment/users/'+auth.uid+'/disabled').val() !== true && (root.child('assortment/users/'+auth.uid+'/role').val() === 'admin')) || (auth != null && auth.uid === $uid && !root.child('assortment/meta/initialized').exists())",
+          ".validate": "newData.hasChildren(['name','email','role'])",
           "role": {
             ".validate": "newData.val() === 'admin' || newData.val() === 'planner' || newData.val() === 'shift' || newData.val() === 'viewer'"
           }
