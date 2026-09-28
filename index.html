@@ -1110,7 +1110,15 @@ APP.start();
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail, updatePassword, EmailAuthProvider, reauthenticateWithCredential, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import { getDatabase, ref, set, get, update, remove, onValue } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
-const FIREBASE_CONFIG = {};
+const FIREBASE_CONFIG = {
+  "apiKey": "AIzaSyARe2fDFQDW3oXSkltSbyMLeHNqNhkLKow",
+  "authDomain": "cbm-assortment-planner.firebaseapp.com",
+  "databaseURL": "https://cbm-assortment-planner-default-rtdb.europe-west1.firebasedatabase.app",
+  "projectId": "cbm-assortment-planner",
+  "storageBucket": "cbm-assortment-planner.firebasestorage.app",
+  "messagingSenderId": "383613714402",
+  "appId": "1:383613714402:web:5dd928558ca657585403bb"
+};
 const $ = id => document.getElementById(id);
 const msg = (t, ok) => { const m = $('lg-msg'); m.textContent = t || ''; m.className = 'lg-msg' + (ok ? ' ok' : ''); };
 if (!FIREBASE_CONFIG.apiKey) { $('loginForm').hidden = true; msg('This planner is not connected to Firebase yet.'); throw new Error('no config'); }
