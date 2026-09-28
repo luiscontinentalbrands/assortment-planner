@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex"></head><body class="locked">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex"><title>Assortment Line Planner</title></head><body class="locked">
 <title>Assortment Line Planner</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -164,18 +164,22 @@ ol.seq .why{grid-column:2/4;font-size:12px;color:var(--muted)}
 .ro-note{padding:8px 12px;background:var(--warn-soft);color:var(--warn);font-size:13px}
 .rk{display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 4px;background:var(--ink);color:var(--bg);font:600 12px var(--mono);margin-right:4px}
 input.bignum{width:100%;max-width:240px;font:600 24px var(--mono);padding:6px 8px;text-align:left}
+input.locked-in,select.locked-in{background:transparent!important;border-color:transparent!important;color:var(--ink);opacity:1}
+[hidden]{display:none!important}
 body.locked .app{display:none}
 body:not(.locked) .login{display:none}
 .login{min-height:100vh;display:grid;place-items:center;padding:24px 16px}
-.login-card{width:100%;max-width:380px;background:var(--surface);border:1px solid var(--rule);border-top:6px solid var(--accent);padding:24px;display:grid;gap:14px}
+.login-card{width:100%;max-width:400px;background:var(--surface);border:1px solid var(--rule);border-top:6px solid var(--accent);padding:24px;display:grid;gap:14px}
 .login-card .brand{padding:0}
+.lgf{display:grid;gap:14px}
 .login-card input{font:500 15px var(--sans);padding:10px;border:1px solid var(--rule);background:var(--surface);color:var(--ink);border-radius:2px;width:100%}
 .login-card .btn{padding:10px}
 .linkbtn{background:none;border:0;color:var(--accent);font:500 13px var(--sans);cursor:pointer;justify-self:start;padding:0}
 .lg-msg{font-size:13px;color:var(--bad);min-height:1em}
 .lg-msg.ok{color:var(--ok)}
-.who{font-size:12px;color:var(--muted);padding:0 6px;display:grid;gap:6px;word-break:break-all}
-.who button{justify-self:start}
+.who{font-size:12px;color:var(--muted);padding:0 6px;display:grid;gap:6px;word-break:break-word}
+.who .row{display:flex;gap:6px;flex-wrap:wrap}
+.panel input[type=text],.panel input[type=email],.panel input[type=password]{font:500 13px var(--sans);color:var(--ink);background:var(--surface);border:1px solid var(--rule);padding:6px 8px;border-radius:2px}
 .chip.over{background:var(--over-soft);color:var(--over)}
 tr.pos-short td{background:var(--bad-soft)}
 tr.pos-over td{background:var(--over-soft)}
@@ -197,14 +201,23 @@ tr.pos-short .pb-s{background:var(--bad);opacity:.8}tr.pos-over .pb-s{background
 @media (prefers-reduced-motion:no-preference){.bar i{transition:width .3s ease}}
 </style>
 
-<div id="login" class="login"><form class="login-card" id="loginForm" autocomplete="on">
+<div id="login" class="login"><div class="login-card">
   <h1 class="brand">Assortment Line Planner<small>Continental Brands · production planning</small></h1>
-  <label class="field"><b>Email</b><input type="email" id="lg-email" autocomplete="username" required></label>
-  <label class="field"><b>Password</b><input type="password" id="lg-pass" autocomplete="current-password" required></label>
-  <button class="btn primary" type="submit" id="lg-go">Sign in</button>
-  <button class="linkbtn" type="button" id="lg-reset">Forgot password?</button>
+  <form id="loginForm" class="lgf" autocomplete="on">
+    <label class="field"><b>Email</b><input type="email" id="lg-email" autocomplete="username" required></label>
+    <label class="field"><b>Password</b><input type="password" id="lg-pass" autocomplete="current-password" required></label>
+    <button class="btn primary" type="submit" id="lg-go">Sign in</button>
+    <button class="linkbtn" type="button" id="lg-reset">Forgot password?</button>
+  </form>
+  <form id="setupForm" class="lgf" hidden autocomplete="off">
+    <p style="margin:0;font-size:13px">First time: create the <b>administrator</b> account. The administrator adds everyone else from inside the planner.</p>
+    <label class="field"><b>Your name</b><input type="text" id="su-name" required></label>
+    <label class="field"><b>Email</b><input type="email" id="su-email" required></label>
+    <label class="field"><b>Password</b><input type="password" id="su-pass" required autocomplete="new-password"></label>
+    <button class="btn primary" type="submit" id="su-go">Create administrator</button>
+  </form>
   <div class="lg-msg" id="lg-msg" role="status"></div>
-</form></div>
+</div></div>
 <div class="app">
 <aside class="side">
   <h1 class="brand">Assortment Line Planner<small>FGC2 · Polin · Wafer · FGC1 · Laser</small></h1>
@@ -221,13 +234,14 @@ tr.pos-short .pb-s{background:var(--bad);opacity:.8}tr.pos-over .pb-s{background
     <button data-t="crates" aria-selected="false"><span class="ic">▦</span>Crates</button>
     <div class="ng">Reference</div>
     <button data-t="notes" aria-selected="false"><span class="ic">i</span>Data notes</button>
+    <button data-t="users" id="nav-users" aria-selected="false" hidden><span class="ic">☺</span>Users</button>
   </nav>
   <div class="sidekpi" id="sidekpi"></div>
   <div class="who" id="who"></div>
   <div class="sync" id="sync" data-s="local"><span class="dot"></span><span id="synctext">Loading…</span></div>
 </aside>
 <div class="content"><div class="inner">
-<div id="ro" class="ro-note" hidden>Your login can view the plan but can't save changes. Ask the administrator to check the Firebase database rules.</div>
+<div id="ro" class="ro-note" hidden></div>
 <main id="main"></main>
 </div></div>
 </div>
@@ -248,7 +262,8 @@ const PRIO = {High:0, Normal:1, Low:2};
 const DAYN = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const PACKS0 = {"p157": {"n": 24, "g": 200}, "p158": {"n": 12, "g": 400}, "p159": {"n": 6, "g": 800}, "p160": {"n": 12, "g": 500}, "p161": {"n": 6, "g": 1000}, "p162": {"n": 6, "g": 1000}, "p163": {"n": 6, "g": 1000}, "p164": {"n": 12, "g": 500}, "p165": {"n": 24, "g": 200}, "p166": {"n": 12, "g": 400}, "p167": {"n": 24, "g": 200}, "p168": {"n": 24, "g": 200}, "p169": {"n": 12, "g": 400}, "p170": {"n": 14, "g": 225}, "p171": {"n": 6, "g": 250}, "p172": {"n": 12, "g": 500}, "p173": {"n": 24, "g": 200}, "p174": {"n": 12, "g": 500}, "p175": {"n": 24, "g": 200}, "p176": {"n": 14, "g": 200}, "p177": {"n": 24, "g": 225}, "p178": {"n": 14, "g": 200}, "p179": {"n": 24, "g": 200}, "p180": {"n": 12, "g": 500}, "p181": {"n": 14, "g": 200}, "p182": {"n": 14, "g": 200}, "p183": {"n": 14, "g": 200}};
-const SHIFT_START = 6; // hours: production day starts 06:00
+const SHIFT_START = 6;
+window.PERM = window.PERM || {canPlan:true, canLog:true, isAdmin:false, role:null}; // hours: production day starts 06:00
 
 function todayISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
 function defaults(){
@@ -273,7 +288,7 @@ function merge(base,src){
 }
 let S = defaults();
 let tab='overview'; let entryDate=todayISO(), entryView='day', entryAll=false;
-try{const h=location.hash.slice(1);if(['overview','plan','orders','entry','schedule','lines','stock','crates','notes'].includes(h))tab=h}catch(e){}
+try{const h=location.hash.slice(1);if(['overview','plan','orders','entry','schedule','lines','stock','crates','notes','users','account'].includes(h))tab=h}catch(e){}
 
 const n0=v=>Math.round(v).toLocaleString('en-ZA').replace(/ /g,' ');
 const n1=v=>(Math.round(v*10)/10).toLocaleString('en-ZA',{minimumFractionDigits:1,maximumFractionDigits:1}).replace(/ /g,' ');
@@ -454,13 +469,14 @@ function render(){
   const C=compute();
   document.querySelectorAll('#tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.t===tab?'true':'false'));
   const f=snapshotFocus();
-  $main.innerHTML = ({overview:vOverview,plan:vPlan,orders:vOrders,entry:vEntry,schedule:vSchedule,lines:vLines,stock:vStock,crates:vCrates,notes:vNotes})[tab](C);
+  $main.innerHTML = ({overview:vOverview,plan:vPlan,orders:vOrders,entry:vEntry,schedule:vSchedule,lines:vLines,stock:vStock,crates:vCrates,notes:vNotes,users:vUsers,account:vAccount})[tab](C);
   const rem=C.plist.reduce((a,p)=>a+(p.I?p.I.rem:0),0), now=C.plist.reduce((a,p)=>a+(p.I?p.I.packNow:0),0);
   const oh=Object.values(C.LG.onHand).reduce((a,v)=>a+Math.max(0,v),0);
   let fin=null;LINES.forEach(L=>{const f=C.lines[L.id].finish;if(f&&(!fin||f.day*24+f.hour>fin.day*24+fin.hour))fin=f});
   const lastDay=C.LG.days.length?C.LG.days[C.LG.days.length-1].date:null;
   document.getElementById('sidekpi').innerHTML=`<div><span>Cases outstanding</span><b>${n0(rem)}</b></div><div><span>Packable now</span><b>${n0(now)}</b></div><div><span>Kg to produce</span><b>${n0(C.totalShort)}</b></div><div><span>Stock on hand</span><b>${n0(oh)} kg</b></div><div><span>Crates free</span><b>${C.crates.total?n0(C.crates.total-C.crates.inUseNow):'—'}</b></div><div><span>All made by</span><b>${fin?fmtWhen(C.toTime(fin)).split(',')[0]:'—'}</b></div><div><span>Last entry</span><b>${lastDay?fmtDay(parseDate(lastDay)):'None yet'}</b></div>`;
   restoreFocus(f);
+  applyPerms();
 }
 
 function vOverview(C){
@@ -907,6 +923,14 @@ function vNotes(C){
   </div>`;
 }
 
+function applyPerms(){
+  if(PERM.canPlan&&PERM.canLog) return;
+  $main.querySelectorAll('input,select,button[data-mode],button[data-ro],button[data-wd],button[data-act="reset"],button[data-act="clear"]').forEach(el=>{
+    if(['entry-date','entryAll','packSel'].includes(el.id)) return;
+    const ok=(el.dataset.mk||el.dataset.pk)?PERM.canLog:PERM.canPlan;
+    if(!ok){el.disabled=true;el.classList.add('locked-in')}
+  });
+}
 /* ---------------- focus keeping ---------------- */
 function snapshotFocus(){const a=document.activeElement;if(!a||!a.id)return null;let s=null;try{s=[a.selectionStart,a.selectionEnd]}catch(e){}return {id:a.id,s}}
 function restoreFocus(f){if(!f)return;const el=document.getElementById(f.id);if(!el)return;el.focus({preventScroll:true});try{if(f.s&&f.s[0]!=null)el.setSelectionRange(f.s[0],f.s[1])}catch(e){}}
@@ -914,12 +938,14 @@ function restoreFocus(f){if(!f)return;const el=document.getElementById(f.id);if(
 /* ---------------- events ---------------- */
 let rt=null, lastInput=0;
 function changed(){dirty=true;clearTimeout(rt);rt=setTimeout(render,200);queueSave()}
+window.tabGo=t=>{tab=t;pending=null;try{history.replaceState(null,'','#'+t)}catch(_){}render()};
 document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.closest('button[data-t]');if(!b)return;tab=b.dataset.t;pending=null;try{history.replaceState(null,'','#'+tab)}catch(_){}render()});
 $main.addEventListener('input',e=>{
   lastInput=Date.now();
-  if(readOnly) return;
   const t=e.target;
   if(t.id==='packSel') return;
+  const isLog=!!(t.dataset.mk||t.dataset.pk), isUI=t.id==='entry-date';
+  if(readOnly||(!isUI&&!(isLog?PERM.canLog:PERM.canPlan))) return;
   if(t.dataset.o){const o=S.orders[t.dataset.o];const f=t.dataset.f;o[f]=(f==='cases'||f==='packed')?num(t.value):t.value;changed()}
   else if(t.dataset.mk||t.dataset.pk){const e=S.log[entryDate]||(S.log[entryDate]={made:{},packed:{}});const k=t.dataset.mk?'made':'packed',id=t.dataset.mk||t.dataset.pk;e[k]=e[k]||{};const v=num(t.value);if(v)e[k][id]=v;else delete e[k][id];changedLog(entryDate)}
   else if(t.dataset.rp){S.ref.repack[t.dataset.rp]=num(t.value);changed()}
@@ -935,8 +961,10 @@ $main.addEventListener('input',e=>{
   else if(t.dataset.s){S.settings[t.dataset.s]=t.dataset.s==='crates'?num(String(t.value).replace(/[^0-9.]/g,'')):(t.dataset.s==='changeover'||t.dataset.s==='buffer'||t.dataset.s==='overPct')?num(t.value):(t.value||todayISO());changed()}
 });
 $main.addEventListener('change',e=>{
-  if(readOnly) return;
   const t=e.target;
+  if(t.id==='entryAll'){entryAll=t.checked;render();return}
+  if(t.id==='packSel'){packSel=t.value;render();return}
+  if(readOnly||!PERM.canPlan) return;
   if(t.id==='onlyActive'){S.onlyActive=t.checked;changed()}
   else if(t.id==='entryAll'){entryAll=t.checked;render()}
   else if(t.id==='packSel'){packSel=t.value;render()}
@@ -950,9 +978,9 @@ $main.addEventListener('click',e=>{
   if(b.dataset.nv){notesView=b.dataset.nv;render();return}
   if(b.dataset.ed!=null){const k=+b.dataset.ed;entryDate=k===0?todayISO():(()=>{const x=addDays(parseDate(entryDate),k);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0')})();render();return}
   if(b.dataset.open){entryDate=b.dataset.open;entryView='day';render();return}
-  if(b.dataset.ro){if(readOnly)return;S.settings.runOrder=b.dataset.ro;changed();return}
-  if(b.dataset.mode){if(readOnly)return;S.settings.mode=b.dataset.mode;changed();return}
-  if(b.dataset.wd!=null){if(readOnly)return;const d=+b.dataset.wd;const w=new Set(S.settings.workDays);w.has(d)?w.delete(d):w.add(d);S.settings.workDays=[...w];changed();return}
+  if(b.dataset.ro){if(readOnly||!PERM.canPlan)return;S.settings.runOrder=b.dataset.ro;changed();return}
+  if(b.dataset.mode){if(readOnly||!PERM.canPlan)return;S.settings.mode=b.dataset.mode;changed();return}
+  if(b.dataset.wd!=null){if(readOnly||!PERM.canPlan)return;const d=+b.dataset.wd;const w=new Set(S.settings.workDays);w.has(d)?w.delete(d):w.add(d);S.settings.workDays=[...w];changed();return}
   if(b.dataset.pv){planView=b.dataset.pv;copyMsg='';render();return}
   const a=b.dataset.act;if(!a)return;
   if(a==='copy'){const t=planTSV(compute());const done=m=>{copyMsg=m;const el=document.getElementById('copymsg');if(el)el.textContent=m};
@@ -960,7 +988,7 @@ $main.addEventListener('click',e=>{
     function fallback(){const ta=document.createElement('textarea');ta.value=t;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();let ok=false;try{ok=document.execCommand('copy')}catch(e){}ta.remove();done(ok?'Copied. Paste into Excel.':'Copy blocked. Select the table and copy it instead.')}
     return}
   if(a==='cancel'){pending=null;render();return}
-  if(a==='clear'||a==='reset'){if(readOnly)return;pending=a;render();return}
+  if(a==='clear'||a==='reset'){if(readOnly||!PERM.canPlan)return;pending=a;render();return}
   if(a==='clear-yes'){for(const id in S.orders){S.orders[id].cases=0}pending=null;S.onlyActive=false;changed();render();return}
   if(a==='reset-yes'){const keep=S.settings,lg=S.log;S=defaults();S.settings=keep;S.log=lg;pending=null;changed();render();return}
 });
@@ -978,10 +1006,11 @@ async function saveLogs(){
   try{for(const d of ds){const e=S.log[d]; const empty=!e||(!Object.keys(e.made||{}).length&&!Object.keys(e.packed||{}).length);
       if(empty){delete S.log[d];await logCol.doc(d).delete()} else await logCol.doc(d).set({date:d,made:e.made||{},packed:e.packed||{}})}
     setSync('saved','Saved · shared with your team')}
-  catch(e){ds.forEach(d=>logDirty.add(d)); if(errMsg(e)){readOnly=true;document.getElementById('ro').hidden=false;setSync('error','Cannot save: check database rules')} else setSync('error','Not saved, will retry on next change')}
+  catch(e){ds.forEach(d=>logDirty.add(d)); if(e&&e.code==='invalid_argument'){readOnly=true;document.getElementById('ro').hidden=false;setSync('error','View only')} else setSync('error','Not saved, will retry on next change')}
   logSaving=false;
 }
 function queueSave(){
+  if(!PERM.canPlan){dirty=false;return}
   if(!ref){saveLocal();dirty=false;return}
   setSync('saving','Saving…');clearTimeout(st);st=setTimeout(doSave,900);
 }
@@ -990,26 +1019,28 @@ async function doSave(){
   saving=true;dirty=false;
   try{await ref.set(serial());setSync('saved','Saved · shared with your team')}
   catch(e){
-    if(errMsg(e)){readOnly=true;document.getElementById('ro').hidden=false;setSync('error','Cannot save: check database rules')}
+    if(e&&e.code==='invalid_argument'){readOnly=true;document.getElementById('ro').hidden=false;setSync('error','View only')}
     else setSync('error','Not saved, will retry on next change');
   }
   saving=false; if(again){again=false;doSave()}
 }
 function clean(v){return JSON.parse(JSON.stringify(v))}
 function errMsg(e){return /permission/i.test(String(e&&(e.code||e.message)))}
+window.USERS=[]; let umsg='', pwmsg='';
 window.APP={
-  start(){try{const raw=localStorage.getItem('alp-plan');if(raw){const o=JSON.parse(raw);S=merge(defaults(),o)}}catch(e){} render(); setSync('saving','Connecting…');},
+  start(){try{const raw=localStorage.getItem('alp-plan');if(raw){S=merge(defaults(),JSON.parse(raw))}}catch(e){} render(); setSync('saving','Connecting…');},
+  rerender(){render()},
   connect(fb){
     ref={set:v=>fb.set('assortment/plan',clean(v))};
     logCol={doc:d=>({set:v=>fb.set('assortment/log/'+d,clean(v)),delete:()=>fb.remove('assortment/log/'+d)})};
-    const bad=e=>{if(errMsg(e)){readOnly=true;document.getElementById('ro').hidden=false;setSync('error','Cannot save: check database rules')}else setSync('error','Connection lost. Reload to reconnect')};
+    const bad=e=>{if(errMsg(e)){setSync('error','No access to the plan data')}else setSync('error','Connection lost. Reload to reconnect')};
     let seeded=false;
     fb.onValue('assortment/plan',v=>{
-      if(v==null){ if(!seeded){seeded=true; doSave();} return; }
+      if(v==null){ if(!seeded&&PERM.canPlan){seeded=true; doSave();} return; }
       seeded=true;
       if(dirty||saving) return;
       const ae=document.activeElement; if(ae&&ae.tagName==='INPUT'&&$main.contains(ae)&&Date.now()-lastInput<3000) return;
-      const lg=S.log; S=merge(defaults(),v); S.log=lg; saveLocal(); render(); if(!readOnly) setSync('saved','Saved · shared with your team');
+      const lg=S.log; S=merge(defaults(),v); S.log=lg; saveLocal(); render(); setSync('saved',PERM.canPlan?'Saved · shared with your team':'Live · '+(PERM.canLog?'daily entry only':'view only'));
     },bad);
     fb.onValue('assortment/log',v=>{
       if(logSaving) return;
@@ -1019,67 +1050,179 @@ window.APP={
     },bad);
   }
 };
+const ROLES={admin:'Administrator',planner:'Planner',shift:'Shift leader',viewer:'Viewer'};
+const ROLE_HELP={admin:'Everything, plus manages users',planner:'Orders, stock, settings and daily entry',shift:'Daily entry (kg produced, cases packed) only',viewer:'Can look, cannot change anything'};
+function roleSel(id,val,attr){return `<select id="${id}" ${attr}>${Object.entries(ROLES).map(([k,v])=>`<option value="${k}"${k===val?' selected':''}>${v}</option>`).join('')}</select>`}
+function vUsers(){
+  if(!PERM.isAdmin) return `<section class="panel"><h2>Users</h2><p class="muted">Only administrators can manage users.</p></section>`;
+  const me=window.ME&&window.ME.uid;
+  const rows=USERS.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(u=>`<tr${u.disabled?' class="dim"':''}>
+    <td><b>${esc(u.name||'')}</b>${u.uid===me?' <span class="chip idle">You</span>':''}</td><td class="num" style="font-size:12px">${esc(u.email||'')}</td>
+    <td>${u.uid===me?ROLES[u.role]:roleSel('ur-'+u.uid,u.role,'data-urole="'+u.uid+'"')}</td>
+    <td>${u.disabled?'<span class="chip bad">Disabled</span>':'<span class="chip ok">Active</span>'}</td>
+    <td style="white-space:nowrap">${u.uid===me?'':`<button class="btn" data-udis="${u.uid}" data-v="${u.disabled?0:1}">${u.disabled?'Enable':'Disable'}</button>`} <button class="btn" data-ureset="${esc(u.email||'')}">Send password reset</button></td></tr>`).join('');
+  return `<section class="toolbar"><div class="grp"><h2>Users</h2><span class="muted">${USERS.length} people have access. Only administrators see this page.</span></div></section>
+  <section class="panel" style="gap:12px"><h3>Add a person</h3>
+   <div class="settings">
+    <label class="field"><b>Name</b><input type="text" id="nu-name" autocomplete="off" style="width:200px"></label>
+    <label class="field"><b>Email</b><input type="email" id="nu-email" autocomplete="off" style="width:240px"></label>
+    <label class="field"><b>Temporary password</b><input type="text" id="nu-pass" autocomplete="off" style="width:170px" placeholder="min. 6 characters"></label>
+    <label class="field"><b>Role</b>${roleSel('nu-role','shift','')}</label>
+    <button class="btn primary" data-act="uadd">Add user</button></div>
+   <div class="lg-msg${/^Added|sent/.test(umsg)?' ok':''}" id="umsg">${esc(umsg)}</div>
+   <div class="legend">${Object.entries(ROLES).map(([k,v])=>`<span><b>${v}:</b> ${ROLE_HELP[k]}</span>`).join('')}</div></section>
+  <div class="tablebox"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>${rows||'<tr class="dim"><td colspan="5">Loading…</td></tr>'}</tbody></table></div>
+  <div class="legend"><span>People can't be deleted from the app; disable them instead. Tell each new person their email and temporary password, and ask them to change it under My account.</span></div>`;
+}
+function vAccount(){
+  const m=window.ME||{};
+  return `<section class="toolbar"><div class="grp"><h2>My account</h2></div></section>
+  <section class="panel" style="gap:12px;max-width:560px">
+   <div class="sc-row"><span>Name</span><b>${esc(m.name||'')}</b></div><div class="sc-row"><span>Email</span><b>${esc(m.email||'')}</b></div><div class="sc-row"><span>Role</span><b>${ROLES[m.role]||''}</b></div>
+   <h3 style="margin-top:8px">Change password</h3>
+   <label class="field"><b>Current password</b><input type="password" id="pw-cur" autocomplete="current-password"></label>
+   <label class="field"><b>New password</b><input type="password" id="pw-new" autocomplete="new-password"></label>
+   <label class="field"><b>Repeat new password</b><input type="password" id="pw-rep" autocomplete="new-password"></label>
+   <button class="btn primary" data-act="pwchg" style="justify-self:start">Change password</button>
+   <div class="lg-msg${/changed/.test(pwmsg)?' ok':''}" id="pwmsg">${esc(pwmsg)}</div></section>`;
+}
+$main.addEventListener('click',async e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  const v=id=>(document.getElementById(id)||{}).value||'';
+  if(b.dataset.act==='uadd'){
+    const d={name:v('nu-name').trim(),email:v('nu-email').trim(),password:v('nu-pass'),role:v('nu-role')};
+    if(!d.name||!d.email||d.password.length<6){umsg='Fill in name, email and a password of at least 6 characters.';render();return}
+    b.disabled=true; umsg='Adding…'; render();
+    umsg=await window.UM.create(d); render();
+  } else if(b.dataset.udis){ await window.UM.update(b.dataset.udis,{disabled:b.dataset.v==='1'}); }
+  else if(b.dataset.ureset){ umsg=await window.UM.reset(b.dataset.ureset); render(); }
+  else if(b.dataset.act==='pwchg'){
+    if(v('pw-new').length<6){pwmsg='The new password needs at least 6 characters.';render();return}
+    if(v('pw-new')!==v('pw-rep')){pwmsg='The two new passwords are different.';render();return}
+    pwmsg=await window.UM.changePw(v('pw-cur'),v('pw-new')); render();
+  }
+});
+$main.addEventListener('change',async e=>{const t=e.target; if(t.dataset.urole){await window.UM.update(t.dataset.urole,{role:t.value})}});
 APP.start();
 </script>
 
 <script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
-import { getDatabase, ref, set, remove, onValue } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
-const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyAil69yaJUrLwMgsI0qNWYYeoSaL8I5toc",
-  authDomain: "grupo-murillo-gomez-cuetara.firebaseapp.com",
-  databaseURL: "https://grupo-murillo-gomez-cuetara-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "grupo-murillo-gomez-cuetara",
-  storageBucket: "grupo-murillo-gomez-cuetara.firebasestorage.app",
-  messagingSenderId: "8631144482",
-  appId: "1:8631144482:web:cccd87cb7a36a907f37a7b"
-};
+import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail, updatePassword, EmailAuthProvider, reauthenticateWithCredential, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+import { getDatabase, ref, set, get, update, remove, onValue } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
+const FIREBASE_CONFIG = {};
+const $ = id => document.getElementById(id);
+const msg = (t, ok) => { const m = $('lg-msg'); m.textContent = t || ''; m.className = 'lg-msg' + (ok ? ' ok' : ''); };
+if (!FIREBASE_CONFIG.apiKey) { $('loginForm').hidden = true; msg('This planner is not connected to Firebase yet.'); throw new Error('no config'); }
 const app = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(app);
 const db = getDatabase(app);
-try { await setPersistence(auth, browserLocalPersistence); } catch(e) {}
-const $ = id => document.getElementById(id);
-const msg = (t, ok) => { const m = $('lg-msg'); m.textContent = t; m.className = 'lg-msg' + (ok ? ' ok' : ''); };
+try { await setPersistence(auth, browserLocalPersistence); } catch (e) {}
+const ROLES = { admin: 'Administrator', planner: 'Planner', shift: 'Shift leader', viewer: 'Viewer' };
 const friendly = e => {
   const c = (e && e.code) || '';
-  if (/invalid-credential|wrong-password|user-not-found|invalid-email/.test(c)) return 'Email or password is wrong.';
+  if (/invalid-credential|wrong-password|user-not-found|invalid-login/.test(c)) return 'Email or password is wrong.';
+  if (/invalid-email/.test(c)) return 'That email address is not valid.';
+  if (/email-already-in-use/.test(c)) return 'This email already has an account.';
+  if (/weak-password/.test(c)) return 'Password too weak: use at least 6 characters.';
   if (/too-many-requests/.test(c)) return 'Too many tries. Wait a few minutes and try again.';
   if (/network/.test(c)) return 'No internet connection.';
-  return 'Could not sign in (' + c + ').';
+  if (/permission/i.test(c + (e && e.message))) return 'Not allowed by the database rules.';
+  return 'Something went wrong (' + (c || (e && e.message)) + ').';
 };
+let initialized = true;
+async function checkInit() { try { const s = await get(ref(db, 'assortment/meta/initialized')); initialized = s.val() === true; } catch (e) { initialized = true; } $('setupForm').hidden = initialized; $('loginForm').hidden = !initialized; }
+checkInit();
 $('loginForm').addEventListener('submit', async ev => {
-  ev.preventDefault(); msg('');
-  $('lg-go').disabled = true;
-  try { await signInWithEmailAndPassword(auth, $('lg-email').value.trim(), $('lg-pass').value); }
-  catch (e) { msg(friendly(e)); }
+  ev.preventDefault(); msg(''); $('lg-go').disabled = true;
+  try { await signInWithEmailAndPassword(auth, $('lg-email').value.trim(), $('lg-pass').value); } catch (e) { msg(friendly(e)); }
   $('lg-go').disabled = false;
 });
 $('lg-reset').addEventListener('click', async () => {
   const em = $('lg-email').value.trim();
   if (!em) { msg('Type your email first, then tap Forgot password.'); return; }
-  try { await sendPasswordResetEmail(auth, em); msg('Password reset email sent to ' + em + '.', true); }
-  catch (e) { msg(friendly(e)); }
+  try { await sendPasswordResetEmail(auth, em); msg('Password reset email sent to ' + em + '.', true); } catch (e) { msg(friendly(e)); }
 });
-let connected = false;
-onAuthStateChanged(auth, u => {
-  if (u) {
-    document.body.classList.remove('locked');
-    $('who').innerHTML = '<span>Signed in as <b></b></span><button class="btn" id="signout" type="button">Sign out</button>';
-    $('who').querySelector('b').textContent = u.email || '';
-    $('signout').onclick = () => signOut(auth);
-    if (!connected) {
-      connected = true;
-      window.APP.connect({
-        set: (p, v) => set(ref(db, p), v),
-        remove: p => remove(ref(db, p)),
-        onValue: (p, cb, err) => onValue(ref(db, p), s => cb(s.val()), err)
-      });
-    }
-  } else {
-    if (connected) { location.reload(); return; }
-    document.body.classList.add('locked');
+let bootstrapping = false;
+$('setupForm').addEventListener('submit', async ev => {
+  ev.preventDefault(); msg(''); $('su-go').disabled = true; bootstrapping = true;
+  try {
+    const cred = await createUserWithEmailAndPassword(auth, $('su-email').value.trim(), $('su-pass').value);
+    await set(ref(db, 'assortment/users/' + cred.user.uid), { name: $('su-name').value.trim(), email: cred.user.email, role: 'admin', disabled: false, createdAt: new Date().toISOString() });
+    await set(ref(db, 'assortment/meta/initialized'), true);
+    bootstrapping = false; handleUser(cred.user);
+  } catch (e) { bootstrapping = false; msg(friendly(e)); try { await signOut(auth); } catch (_) {} }
+  $('su-go').disabled = false;
+});
+function setRole(p) {
+  const r = p.role;
+  window.PERM.role = r; window.PERM.isAdmin = r === 'admin';
+  window.PERM.canPlan = r === 'admin' || r === 'planner';
+  window.PERM.canLog = window.PERM.canPlan || r === 'shift';
+  $('nav-users').hidden = !window.PERM.isAdmin;
+  const ro = $('ro');
+  if (r === 'viewer') { ro.textContent = 'You have view-only access. Ask an administrator if you need to enter data.'; ro.hidden = false; }
+  else if (r === 'shift') { ro.textContent = 'Shift leader access: you can enter daily kg produced and cases packed. Other figures are view-only.'; ro.hidden = false; }
+  else ro.hidden = true;
+  $('who').innerHTML = '<span><b></b><br><span class="rl"></span></span><div class="row"><button class="btn" type="button" id="myacc">My account</button><button class="btn" type="button" id="signout">Sign out</button></div>';
+  $('who').querySelector('b').textContent = p.name || p.email || '';
+  $('who').querySelector('.rl').textContent = ROLES[r] || '';
+  $('signout').onclick = () => signOut(auth);
+  $('myacc').onclick = () => { document.querySelector('#tabs button[data-t="overview"]'); window.tabGo && window.tabGo('account'); };
+}
+let connected = false, usersUnsub = null, lastRole = null;
+async function handleUser(u) {
+  let prof = null;
+  try { prof = (await get(ref(db, 'assortment/users/' + u.uid))).val(); } catch (e) {}
+  if (!prof || prof.disabled) {
+    await signOut(auth);
+    msg(prof && prof.disabled ? 'This account has been disabled. Ask the administrator.' : 'This account is not set up for the planner. Ask the administrator to add you.');
+    return;
   }
+  window.ME = Object.assign({ uid: u.uid }, prof);
+  setRole(prof); lastRole = prof.role;
+  document.body.classList.remove('locked');
+  onValue(ref(db, 'assortment/users/' + u.uid), s => {
+    const p = s.val();
+    if (!p || p.disabled) { signOut(auth); return; }
+    window.ME = Object.assign({ uid: u.uid }, p);
+    if (p.role !== lastRole) { lastRole = p.role; setRole(p); if (usersUnsub && !window.PERM.isAdmin) { usersUnsub(); usersUnsub = null; } if (window.PERM.isAdmin && !usersUnsub) watchUsers(); }
+    else setRole(p);
+    window.APP.rerender();
+  });
+  if (window.PERM.isAdmin) watchUsers();
+  if (!connected) {
+    connected = true;
+    window.APP.connect({ set: (p, v) => set(ref(db, p), v), remove: p => remove(ref(db, p)), onValue: (p, cb, err) => onValue(ref(db, p), s => cb(s.val()), err) });
+  }
+  window.APP.rerender();
+}
+function watchUsers() {
+  usersUnsub = onValue(ref(db, 'assortment/users'), s => { const v = s.val() || {}; window.USERS = Object.entries(v).map(([uid, p]) => Object.assign({ uid }, p)); window.APP.rerender(); }, () => {});
+}
+onAuthStateChanged(auth, u => {
+  if (u) { if (!bootstrapping) handleUser(u); }
+  else { if (connected) { location.reload(); return; } document.body.classList.add('locked'); checkInit(); }
 });
+window.UM = {
+  async create(d) {
+    let sec = null;
+    try {
+      sec = initializeApp(FIREBASE_CONFIG, 'add-' + Date.now());
+      const a2 = getAuth(sec);
+      const cred = await createUserWithEmailAndPassword(a2, d.email, d.password);
+      await signOut(a2);
+      await set(ref(db, 'assortment/users/' + cred.user.uid), { name: d.name, email: cred.user.email, role: d.role, disabled: false, createdAt: new Date().toISOString(), createdBy: auth.currentUser.uid });
+      return 'Added ' + d.name + ' as ' + ROLES[d.role] + '. Give them their email and temporary password.';
+    } catch (e) { return friendly(e); }
+    finally { if (sec) { try { await deleteApp(sec); } catch (_) {} } }
+  },
+  async update(uid, patch) { try { await update(ref(db, 'assortment/users/' + uid), patch); } catch (e) { alert(friendly(e)); } },
+  async reset(email) { try { await sendPasswordResetEmail(auth, email); return 'Password reset email sent to ' + email + '.'; } catch (e) { return friendly(e); } },
+  async changePw(cur, nw) {
+    try { const u = auth.currentUser; await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, cur)); await updatePassword(u, nw); return 'Password changed.'; }
+    catch (e) { return friendly(e); }
+  }
+};
 </script>
 </body></html>

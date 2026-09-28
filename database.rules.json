@@ -1,0 +1,30 @@
+{
+  "rules": {
+    "assortment": {
+      "meta": {
+        ".read": true,
+        "initialized": {
+          ".write": "auth != null && (!data.exists() || (auth != null && root.child('assortment/users/'+auth.uid).exists() && root.child('assortment/users/'+auth.uid+'/disabled').val() !== true && (root.child('assortment/users/'+auth.uid+'/role').val() === 'admin')))"
+        }
+      },
+      "users": {
+        ".read": "auth != null && root.child('assortment/users/'+auth.uid).exists() && root.child('assortment/users/'+auth.uid+'/disabled').val() !== true && (root.child('assortment/users/'+auth.uid+'/role').val() === 'admin')",
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "(auth != null && root.child('assortment/users/'+auth.uid).exists() && root.child('assortment/users/'+auth.uid+'/disabled').val() !== true && (root.child('assortment/users/'+auth.uid+'/role').val() === 'admin')) || (auth != null && auth.uid === $uid && !root.child('assortment/meta/initialized').exists())",
+          "role": {
+            ".validate": "newData.val() === 'admin' || newData.val() === 'planner' || newData.val() === 'shift' || newData.val() === 'viewer'"
+          }
+        }
+      },
+      "plan": {
+        ".read": "auth != null && root.child('assortment/users/'+auth.uid).exists() && root.child('assortment/users/'+auth.uid+'/disabled').val() !== true",
+        ".write": "auth != null && root.child('assortment/users/'+auth.uid).exists() && root.child('assortment/users/'+auth.uid+'/disabled').val() !== true && (root.child('assortment/users/'+auth.uid+'/role').val() === 'admin' || root.child('assortment/users/'+auth.uid+'/role').val() === 'planner')"
+      },
+      "log": {
+        ".read": "auth != null && root.child('assortment/users/'+auth.uid).exists() && root.child('assortment/users/'+auth.uid+'/disabled').val() !== true",
+        ".write": "auth != null && root.child('assortment/users/'+auth.uid).exists() && root.child('assortment/users/'+auth.uid+'/disabled').val() !== true && (root.child('assortment/users/'+auth.uid+'/role').val() === 'admin' || root.child('assortment/users/'+auth.uid+'/role').val() === 'planner' || root.child('assortment/users/'+auth.uid+'/role').val() === 'shift')"
+      }
+    }
+  }
+}
