@@ -272,7 +272,7 @@ function defaults(){
   SEED.biscuits.forEach(b=>{stock[b.id]=b.stock;rates[b.id]=b.kgph;lineOf[b.id]=b.line});
   const ref={repack:{},crate:{},pieceG:{},packs:JSON.parse(JSON.stringify(PACKS0))};
   SEED.products.forEach(p=>ref.repack[p.id]=p.repack||0);SEED.biscuits.forEach(b=>{ref.crate[b.id]=b.crate;ref.pieceG[b.id]=0});
-  return {orders,opening:{date:todayISO(),stock},rates,lineOf,log:{},ref,settings:{start:todayISO(),workDays:[1,2,3,4,5],lineDays:{FGC2:[1,2,3,4,5],POLIN:[0,1,2,3,4,5,6],WAFER:[1,2,3,4,5],FGC1:[1,2,3,4,5],LASER:[1,2,3,4,5,6],REPACK:[1,2,3,4,5]},hpd:{FGC2:24,POLIN:24,WAFER:24,FGC1:24,LASER:24},changeover:0,mode:'jit',buffer:2,runOrder:'stock',overPct:150,crates:0,repackHpd:24,maxPerShift:2,shiftLen:12},onlyActive:true};
+  return {orders,opening:{date:todayISO(),stock},rates,lineOf,log:{},ref,settings:{start:todayISO(),workDays:[1,2,3,4,5],lineDays:{FGC2:[1,2,3,4,5],POLIN:[0,1,2,3,4,5,6],WAFER:[1,2,3,4,5],FGC1:[1,2,3,4,5],LASER:[1,2,3,4,5,6],REPACK:[1,2,3,4,5]},hpd:{FGC2:24,POLIN:24,WAFER:24,FGC1:24,LASER:24},changeover:0,mode:'jit',buffer:2,runOrder:'stock',overPct:150,crates:0,repackHpd:24,shiftMax:{FGC2:{d:2,n:1},POLIN:{d:2,n:1},LASER:{d:2,n:1},WAFER:{d:0,n:0},FGC1:{d:0,n:0}}},onlyActive:true};
 }
 function merge(base,src){
   const s=JSON.parse(JSON.stringify(base));
@@ -282,7 +282,7 @@ function merge(base,src){
   if(op){ if(op.date) s.opening.date=op.date; if(op.stock) for(const id in op.stock) if(id in s.opening.stock) s.opening.stock[id]=op.stock[id]; }
   if(src.log) s.log=JSON.parse(JSON.stringify(src.log));
   if(src.ref) for(const k of ['repack','crate','pieceG','packs']) if(src.ref[k]) for(const id in src.ref[k]) if(id in s.ref[k]) s.ref[k][id]=(k==='packs'?Object.assign({},s.ref[k][id],src.ref[k][id]):src.ref[k][id]);
-  if(src.settings){Object.assign(s.settings,src.settings);s.settings.hpd=Object.assign({},base.settings.hpd,src.settings.hpd||{});s.settings.lineDays=Object.assign({},base.settings.lineDays,src.settings.lineDays||{})}
+  if(src.settings){Object.assign(s.settings,src.settings);s.settings.hpd=Object.assign({},base.settings.hpd,src.settings.hpd||{});s.settings.lineDays=Object.assign({},base.settings.lineDays,src.settings.lineDays||{});s.settings.shiftMax=Object.assign({},base.settings.shiftMax,src.settings.shiftMax||{})}
   if('onlyActive' in src) s.onlyActive=src.onlyActive;
   return s;
 }
@@ -376,14 +376,21 @@ function compute(){
   }
   const byStock=(st.runOrder||'stock')==='stock';
   Object.values(bis).forEach(b=>b.cover=b.req>0?b.stock/b.req:1);
-  const maxP=Math.max(0,Math.round(num(st.maxPerShift)));
-  // place runs one after another (in working hours), never more than maxP products in one shift
-  function place(runs,hpd){
-    const SL=Math.max(1,Math.min(num(st.shiftLen)||12,hpd||24)); const cnt={}; let cur=0;
+  // place runs one after another (in working hours); per line: max products in a day shift (06-18) and night shift (18-06)
+  function place(runs,hpd,lid){
+    const lim=(st.shiftMax&&st.shiftMax[lid])||{d:0,n:0}; const md=Math.round(num(lim.d)), mn=Math.round(num(lim.n));
+    const H=hpd||24, SL=12, on=md>0||mn>0;
+    const sIdx=w=>{const d=Math.floor(w/H+1e-9), o=w-d*H; return d*2+(o>=SL-1e-9?1:0)};
+    const sStart=k=>Math.floor(k/2)*H+(k%2?SL:0);
+    const cap=k=>{const m=k%2?mn:md; return m>0?m:1e9};
+    const cnt={}; let cur=0;
     runs.forEach((r,i)=>{ const h=r.ew-r.sw; let s0=Math.max(r.sw,i?cur+co:0);
-      if(maxP>0){ let g=0; while(g++<2000){ const fs=Math.floor(s0/SL+1e-9); if((cnt[fs]||0)>=maxP){ s0=(fs+1)*SL; continue } break } }
+      if(on){ const lo=i?cur+co:0; let g=0; while(g++<4000){ const k=sIdx(s0);
+          if((cnt[k]||0)>=cap(k)){ let nk=k+1; if(nk%2&&H<=SL) nk++; s0=Math.max(s0,sStart(nk)); continue }
+          if(k%2&&mn===1&&s0>sStart(k)+1e-6){ if(sStart(k)>=lo-1e-9){ s0=sStart(k); break } s0=sStart(k+1); continue }
+          break } }
       r.sw=s0; r.ew=s0+h;
-      if(maxP>0) for(let k=Math.floor(s0/SL+1e-9);k<=Math.floor((r.ew-1e-9)/SL);k++) cnt[k]=(cnt[k]||0)+1;
+      if(on) for(let k=sIdx(s0);k<=sIdx(r.ew-1e-9);k++) cnt[k]=(cnt[k]||0)+1;
       cur=r.ew; });
   }
   const lines={}; const cal={};
@@ -391,7 +398,7 @@ function compute(){
   LINES.forEach(L=>{
     const hpd=Math.min(24,num(st.hpd[L.id])); const c=mkCal(hpd,daysOf(L.id)); cal[L.id]=c;
     const tasks=Object.values(bis).filter(b=>b.line===L.id&&b.short>0.5).sort(byStock?((a,b)=>(a.cover-b.cover)||((rank[a.id]??1e9)-(rank[b.id]??1e9))):((a,b)=>((rank[a.id]??1e9)-(rank[b.id]??1e9))||(a.hours-b.hours)));
-    const runs=tasks.map(b=>({b,sw:0,ew:b.hours})); place(runs,hpd);
+    const runs=tasks.map(b=>({b,sw:0,ew:b.hours})); place(runs,hpd,L.id);
     lines[L.id]={L,hpd,tasks,runs,hours:tasks.reduce((s,b)=>s+b.hours,0),kg:tasks.reduce((s,b)=>s+b.short,0),crates:tasks.reduce((s,b)=>s+b.crates,0),allBis:Object.values(bis).filter(b=>b.line===L.id)};
   });
   const endAbs=()=>{const e={};LINES.forEach(L=>lines[L.id].runs.forEach(r=>e[r.b.id]=cal[L.id].toAbs(r.ew,false)));return e};
@@ -404,11 +411,13 @@ function compute(){
   if(jit){
     LINES.forEach(L=>{
       const l=lines[L.id], c=cal[L.id]; if(!l.runs.length||c.hpd<=0) return;
+      const p1=new Map(l.runs.map(r=>[r,[r.sw,r.ew]])); const end1=Math.max(...[...p1.values()].map(v=>v[1]));
       const byNeed=byStock?l.runs.slice().reverse():l.runs.slice().sort((a,b)=>(N1[b.b.id]??1e12)-(N1[a.b.id]??1e12)||((rank[b.b.id]??0)-(rank[a.b.id]??0)));
       let lim=Infinity;
       byNeed.forEach(r=>{ const due=N1[r.b.id]; let ew=due!=null?c.absToWork(Math.max(0,due-buf)):r.ew; if(lim!==Infinity) ew=Math.min(ew,lim-co); r.ew=ew; r.sw=ew-r.b.hours; lim=r.sw; });
       l.runs.sort((a,b)=>a.sw-b.sw);
-      place(l.runs,c.hpd);
+      place(l.runs,c.hpd,L.id);
+      if(l.runs.some(r=>{const e=c.toAbs(r.ew,false),nb=N1[r.b.id],e1=c.toAbs(p1.get(r)[1],false);return nb!=null&&e>nb+1e-6&&e>e1+1e-6})){ l.runs.forEach(r=>{const v=p1.get(r);r.sw=v[0];r.ew=v[1]}); l.runs.sort((a,b)=>a.sw-b.sw); }
     });
   }
   const eF=endAbs(), RF=readyOf(eF), NF=needBy(RF), finalWait=waitStats(eF,NF);
@@ -701,21 +710,21 @@ function vSchedule(C){
     ${l.runs.length?`<ol class="seq">${l.runs.map(r=>`<li><span>${esc(r.b.name)} <span class="num muted">${n0(r.b.short)} kg</span></span><span class="when">${fmtWhen(C.toTime(r.start)).replace(/^\w+ /,'')} → ${fmtWhen(C.toTime(r.end)).replace(/^\w+ /,'')}</span><span class="why">${'Stock covers '+Math.round(Math.min(1,r.b.cover)*100)+'% · '}${r.forP?'for '+esc(r.forP.name)+(S.orders[r.forP.id].due?' (due '+fmtDay(parseDate(S.orders[r.forP.id].due))+')':'')+' · ':''}${r.wait>12?`<span class="chip warn">waits ${n1(r.wait)} h</span>`:r.wait>0.5?`waits ${n1(r.wait)} h before packing`:'packed as it comes off'}</span></li>`).join('')}</ol>`:'<div class="none">Nothing to make — stock covers these orders.</div>'}</section>`;
   }).join('');
   return `<section class="panel">
-    <div class="toolbar"><h2>Plan settings</h2><span class="muted" style="font-size:12px">${(st.runOrder||'stock')==='stock'?'Each line runs the biscuit with the least stock (compared with what the orders need) first. ':'Each line runs biscuits in order of the most urgent order. '}${st.mode==='asap'?'Every line starts straight away.':'The slowest line for each product sets its packing time. Other lines are timed so their biscuits come off just before packing, not days early.'} Days start at 06:00, shifts 06:00–18:00 and 18:00–06:00${num(st.maxPerShift)?`, at most ${num(st.maxPerShift)} products per shift on each line`:''}.</span></div>
+    <div class="toolbar"><h2>Plan settings</h2><span class="muted" style="font-size:12px">${(st.runOrder||'stock')==='stock'?'Each line runs the biscuit with the least stock (compared with what the orders need) first. ':'Each line runs biscuits in order of the most urgent order. '}${st.mode==='asap'?'Every line starts straight away.':'The slowest line for each product sets its packing time. Other lines are timed so their biscuits come off just before packing, not days early.'} Days start at 06:00, shifts 06:00–18:00 and 18:00–06:00; the product limits per shift are in the table below.</span></div>
     <div class="settings">
       <label class="field"><b>Start date</b><input type="date" id="set-start" data-s="start" value="${esc(st.start)}"></label>
       <div class="field"><b>Timing</b><div class="days mode">${[['jit','Just in time'],['asap','As soon as possible']].map(([k,t])=>`<button data-mode="${k}" aria-pressed="${(st.mode||'jit')===k}">${t}</button>`).join('')}</div></div>
       <div class="field"><b>Run order on each line</b><div class="days mode">${[['stock','Lowest stock first'],['urgent','Most urgent order first']].map(([k,t])=>`<button data-ro="${k}" aria-pressed="${(st.runOrder||'stock')===k}">${t}</button>`).join('')}</div></div>
       <label class="field"><b>Ready before packing (h)</b><input type="text" inputmode="decimal" autocomplete="off" min="0" step="1" id="set-buf" data-s="buffer" value="${num(st.buffer)}" style="width:70px"></label>
-      <label class="field"><b>Max products per shift</b><input type="text" inputmode="decimal" autocomplete="off" id="set-mps" data-s="maxPerShift" value="${num(st.maxPerShift)}" style="width:70px"></label>
-      <label class="field"><b>Shift length (h)</b><input type="text" inputmode="decimal" autocomplete="off" id="set-sl" data-s="shiftLen" value="${num(st.shiftLen)||12}" style="width:70px"></label>
       <label class="field"><b>Changeover (h)</b><input type="text" inputmode="decimal" autocomplete="off" min="0" step="0.25" id="set-co" data-s="changeover" value="${num(st.changeover)}" style="width:70px"></label>
     </div>
-    <div class="tablebox" style="max-width:720px"><table class="compact" style="min-width:0"><thead><tr><th>Line</th><th>Working days</th><th class="r">Hours / day</th></tr></thead><tbody>
+    <div class="tablebox" style="max-width:900px"><table class="compact" style="min-width:0"><thead><tr><th>Line</th><th>Working days</th><th class="r">Hours / day</th><th class="r">Max products<br>day shift</th><th class="r">Max products<br>night shift</th></tr></thead><tbody>
     ${[...LINES.map(L=>({id:L.id,name:L.name})),{id:'REPACK',name:'Repacking'}].map(r=>{const ds=(st.lineDays&&st.lineDays[r.id])||st.workDays;const h=r.id==='REPACK'?(num(st.repackHpd)||24):num(st.hpd[r.id]);
       return `<tr><td><span class="lname" style="font-size:14px">${r.id==='REPACK'?'<i class="sw" style="background:var(--accent)"></i>':lineDot(r.id)}${r.name}</span></td><td><div class="days">${[1,2,3,4,5,6,0].map(d=>`<button data-ld="${r.id}" data-wd="${d}" aria-pressed="${ds.includes(d)}">${DAYN[d]}</button>`).join('')}</div></td>
-      <td class="r"><input type="text" inputmode="decimal" autocomplete="off" id="hpd-${r.id}" ${r.id==='REPACK'?'data-s="repackHpd"':`data-h="${r.id}"`} value="${h}" style="width:64px"></td></tr>`}).join('')}
+      <td class="r"><input type="text" inputmode="decimal" autocomplete="off" id="hpd-${r.id}" ${r.id==='REPACK'?'data-s="repackHpd"':`data-h="${r.id}"`} value="${h}" style="width:64px"></td>
+      ${r.id==='REPACK'?'<td></td><td></td>':(()=>{const m=(st.shiftMax&&st.shiftMax[r.id])||{d:0,n:0};return `<td class="r"><input type="text" inputmode="decimal" autocomplete="off" id="smd-${r.id}" data-sm="${r.id}" data-k="d" value="${num(m.d)||''}" placeholder="any" style="width:56px"></td><td class="r"><input type="text" inputmode="decimal" autocomplete="off" id="smn-${r.id}" data-sm="${r.id}" data-k="n" value="${num(m.n)||''}" placeholder="any" style="width:56px"></td>`})()}</tr>`}).join('')}
     </tbody></table></div>
+    <div class="muted" style="font-size:12px">Max products: 1 = no product change in that shift (the run from the previous shift carries on, the next product waits for the next shift); empty = no limit.</div>
   </section>
   <section style="display:grid;gap:8px"><h2>Line schedule</h2>
   <div class="gantt"><div class="g-inner" style="width:${96+days*W}px">
@@ -993,8 +1002,9 @@ $main.addEventListener('input',e=>{
   else if(t.dataset.od){if(t.value){S.opening.date=t.value;changed()}}
   else if(t.id==='entry-date'){if(t.value){entryDate=t.value;clearTimeout(rt);rt=setTimeout(render,150)}}
   else if(t.dataset.rt){S.rates[t.dataset.rt]=num(t.value);changed()}
+  else if(t.dataset.sm){S.settings.shiftMax=S.settings.shiftMax||{};const m=Object.assign({d:0,n:0},S.settings.shiftMax[t.dataset.sm]);m[t.dataset.k]=num(t.value);S.settings.shiftMax[t.dataset.sm]=m;changed()}
   else if(t.dataset.h){S.settings.hpd[t.dataset.h]=Math.min(24,num(t.value));changed()}
-  else if(t.dataset.s){S.settings[t.dataset.s]=t.dataset.s==='crates'?num(String(t.value).replace(/[^0-9.]/g,'')):(t.dataset.s==='changeover'||t.dataset.s==='buffer'||t.dataset.s==='overPct'||t.dataset.s==='repackHpd'||t.dataset.s==='maxPerShift'||t.dataset.s==='shiftLen')?num(t.value):(t.value||todayISO());changed()}
+  else if(t.dataset.s){S.settings[t.dataset.s]=t.dataset.s==='crates'?num(String(t.value).replace(/[^0-9.]/g,'')):(t.dataset.s==='changeover'||t.dataset.s==='buffer'||t.dataset.s==='overPct'||t.dataset.s==='repackHpd')?num(t.value):(t.value||todayISO());changed()}
 });
 $main.addEventListener('change',e=>{
   const t=e.target;
