@@ -360,7 +360,10 @@ function compute(){
   // rank of each biscuit = position of most urgent product that still needs it
   const rank={}; order.forEach((x,idx)=>{for(const b in info[x.p.id].unmet) if(!(b in rank)) rank[b]=idx});
   // ---------- scheduling ----------
-  const start=parseDate(st.start);
+  const startISO=(!st.start||st.start<todayISO())?todayISO():st.start;
+  const start=parseDate(startISO);
+  // if the plan starts today, the first usable time is the next shift change (06:00 / 18:00), not 06:00 this morning
+  let T0=0; if(startISO===todayISO()){const nw=new Date();const h=nw.getHours()+nw.getMinutes()/60-SHIFT_START;T0=h<=0?0:Math.ceil(h/12-1e-9)*12}
   const work=new Set(st.workDays);
   const co=num(st.changeover), buf=num(st.buffer);
   const isWork=d=>work.has(addDays(start,d).getDay());
@@ -377,15 +380,15 @@ function compute(){
   const byStock=(st.runOrder||'stock')==='stock';
   Object.values(bis).forEach(b=>b.cover=b.req>0?b.stock/b.req:1);
   // place runs one after another (in working hours); per line: max products in a day shift (06-18) and night shift (18-06)
-  function place(runs,hpd,lid){
+  function place(runs,hpd,lid,w0){ w0=w0||0;
     const lim=(st.shiftMax&&st.shiftMax[lid])||{d:0,n:0}; const md=Math.round(num(lim.d)), mn=Math.round(num(lim.n));
     const H=hpd||24, SL=12, on=md>0||mn>0;
     const sIdx=w=>{const d=Math.floor(w/H+1e-9), o=w-d*H; return d*2+(o>=SL-1e-9?1:0)};
     const sStart=k=>Math.floor(k/2)*H+(k%2?SL:0);
     const cap=k=>{const m=k%2?mn:md; return m>0?m:1e9};
     const cnt={}; let cur=0;
-    runs.forEach((r,i)=>{ const h=r.ew-r.sw; let s0=Math.max(r.sw,i?cur+co:0);
-      if(on){ const lo=i?cur+co:0; let g=0; while(g++<4000){ const k=sIdx(s0);
+    runs.forEach((r,i)=>{ const h=r.ew-r.sw; let s0=Math.max(r.sw,i?cur+co:0,w0);
+      if(on){ const lo=Math.max(i?cur+co:0,w0); let g=0; while(g++<4000){ const k=sIdx(s0);
           if((cnt[k]||0)>=cap(k)){ let nk=k+1; if(nk%2&&H<=SL) nk++; s0=Math.max(s0,sStart(nk)); continue }
           if(k%2&&mn===1&&s0>sStart(k)+1e-6){ if(sStart(k)>=lo-1e-9){ s0=sStart(k); break } s0=sStart(k+1); continue }
           break } }
@@ -398,7 +401,7 @@ function compute(){
   LINES.forEach(L=>{
     const hpd=Math.min(24,num(st.hpd[L.id])); const c=mkCal(hpd,daysOf(L.id)); cal[L.id]=c;
     const tasks=Object.values(bis).filter(b=>b.line===L.id&&b.short>0.5).sort(byStock?((a,b)=>(a.cover-b.cover)||((rank[a.id]??1e9)-(rank[b.id]??1e9))):((a,b)=>((rank[a.id]??1e9)-(rank[b.id]??1e9))||(a.hours-b.hours)));
-    const runs=tasks.map(b=>({b,sw:0,ew:b.hours})); place(runs,hpd,L.id);
+    const runs=tasks.map(b=>({b,sw:0,ew:b.hours})); place(runs,hpd,L.id,c.absToWork(T0));
     lines[L.id]={L,hpd,tasks,runs,hours:tasks.reduce((s,b)=>s+b.hours,0),kg:tasks.reduce((s,b)=>s+b.short,0),crates:tasks.reduce((s,b)=>s+b.crates,0),allBis:Object.values(bis).filter(b=>b.line===L.id)};
   });
   const endAbs=()=>{const e={};LINES.forEach(L=>lines[L.id].runs.forEach(r=>e[r.b.id]=cal[L.id].toAbs(r.ew,false)));return e};
@@ -416,7 +419,7 @@ function compute(){
       let lim=Infinity;
       byNeed.forEach(r=>{ const due=N1[r.b.id]; let ew=due!=null?c.absToWork(Math.max(0,due-buf)):r.ew; if(lim!==Infinity) ew=Math.min(ew,lim-co); r.ew=ew; r.sw=ew-r.b.hours; lim=r.sw; });
       l.runs.sort((a,b)=>a.sw-b.sw);
-      place(l.runs,c.hpd,L.id);
+      place(l.runs,c.hpd,L.id,c.absToWork(T0));
       if(l.runs.some(r=>{const e=c.toAbs(r.ew,false),nb=N1[r.b.id],e1=c.toAbs(p1.get(r)[1],false);return nb!=null&&e>nb+1e-6&&e>e1+1e-6})){ l.runs.forEach(r=>{const v=p1.get(r);r.sw=v[0];r.ew=v[1]}); l.runs.sort((a,b)=>a.sw-b.sw); }
     });
   }
@@ -461,7 +464,7 @@ function compute(){
     if(I.rem>I.packNow) jobs.push({x,i,cases:I.rem-I.packNow,avail:RF[x.p.id]??0,cpc});});
   jobs.sort((a,b)=>a.avail-b.avail||a.i-b.i);
   const rc=mkCal(Math.min(24,num(st.repackHpd)||24),daysOf('REPACK'));
-  let rtW=0, rt=0; const repJobs=[], packEnd={}, packStart={}, noRate={};
+  let rtW=rc.absToWork(T0), rt=0; const repJobs=[], packEnd={}, packStart={}, noRate={};
   jobs.forEach(j=>{const rate=num(S.ref.repack[j.x.p.id]);const pid=j.x.p.id;const tot=j.cases*j.cpc;
     for(const b in info[pid].per) emptyBis[b]=(emptyBis[b]||0)+j.cases*info[pid].per[b]/ck(b);
     if(!rate){noRate[pid]=true;repJobs.push({p:j.x.p,cases:j.cases,start:j.avail,end:j.avail,rate:0});spread(emptyH,j.avail,j.avail,tot);spread(casesH,j.avail,j.avail,j.cases);packEnd[pid]=Math.max(packEnd[pid]??0,j.avail);if(packStart[pid]==null)packStart[pid]=j.avail;return}
@@ -479,7 +482,7 @@ function compute(){
     for(let h=d*24;h<d*24+24;h++){const fh=fillH[h]||0,eh=emptyH[h]||0;f+=fh;e+=eh;cs+=casesH[h]||0;cur=Math.max(0,cur+fh-eh);if(cur>pk)pk=cur}
     crDays.push({day:d,start:s0,fill:f,empty:e,end:cur,cases:cs,peakIn:pk});if(pk>peak.v)peak={v:pk,day:d}}
   const crates={total,inUseNow,crInUse,fillBis,emptyBis,days:crDays,peak,repJobs,filled:Object.values(fillH).reduce((a,v)=>a+v,0),emptied:Object.values(emptyH).reduce((a,v)=>a+v,0),repEnd:rt};
-  return {crates,LG,order,info,bis,lines,plist,start,horizon,toTime,jit,asapWait,finalWait,totalShort:Object.values(bis).reduce((s,b)=>s+b.short,0),totalReq:Object.values(req).reduce((s,v)=>s+v,0)};
+  return {T0,crates,LG,order,info,bis,lines,plist,start,horizon,toTime,jit,asapWait,finalWait,totalShort:Object.values(bis).reduce((s,b)=>s+b.short,0),totalReq:Object.values(req).reduce((s,v)=>s+v,0)};
 }
 
 /* ---------------- rendering ---------------- */
@@ -712,7 +715,7 @@ function vSchedule(C){
   return `<section class="panel">
     <div class="toolbar"><h2>Plan settings</h2><span class="muted" style="font-size:12px">${(st.runOrder||'stock')==='stock'?'Each line runs the biscuit with the least stock (compared with what the orders need) first. ':'Each line runs biscuits in order of the most urgent order. '}${st.mode==='asap'?'Every line starts straight away.':'The slowest line for each product sets its packing time. Other lines are timed so their biscuits come off just before packing, not days early.'} Days start at 06:00, shifts 06:00–18:00 and 18:00–06:00; the product limits per shift are in the table below.</span></div>
     <div class="settings">
-      <label class="field"><b>Start date</b><input type="date" id="set-start" data-s="start" value="${esc(st.start)}"></label>
+      <label class="field"><b>Start date</b><input type="date" id="set-start" data-s="start" value="${esc(st.start&&st.start>todayISO()?st.start:todayISO())}"><span style="font-size:11px">Plan starts ${fmtWhen(C.toTime({day:Math.floor(C.T0/24),hour:C.T0-Math.floor(C.T0/24)*24}))}</span></label>
       <div class="field"><b>Timing</b><div class="days mode">${[['jit','Just in time'],['asap','As soon as possible']].map(([k,t])=>`<button data-mode="${k}" aria-pressed="${(st.mode||'jit')===k}">${t}</button>`).join('')}</div></div>
       <div class="field"><b>Run order on each line</b><div class="days mode">${[['stock','Lowest stock first'],['urgent','Most urgent order first']].map(([k,t])=>`<button data-ro="${k}" aria-pressed="${(st.runOrder||'stock')===k}">${t}</button>`).join('')}</div></div>
       <label class="field"><b>Ready before packing (h)</b><input type="text" inputmode="decimal" autocomplete="off" min="0" step="1" id="set-buf" data-s="buffer" value="${num(st.buffer)}" style="width:70px"></label>
