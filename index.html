@@ -272,7 +272,7 @@ function defaults(){
   SEED.biscuits.forEach(b=>{stock[b.id]=b.stock;rates[b.id]=b.kgph;lineOf[b.id]=b.line});
   const ref={repack:{},crate:{},pieceG:{},packs:JSON.parse(JSON.stringify(PACKS0))};
   SEED.products.forEach(p=>ref.repack[p.id]=p.repack||0);SEED.biscuits.forEach(b=>{ref.crate[b.id]=b.crate;ref.pieceG[b.id]=0});
-  return {orders,opening:{date:todayISO(),stock},rates,lineOf,log:{},ref,settings:{start:todayISO(),workDays:[1,2,3,4,5],lineDays:{FGC2:[1,2,3,4,5],POLIN:[0,1,2,3,4,5,6],WAFER:[1,2,3,4,5],FGC1:[1,2,3,4,5],LASER:[1,2,3,4,5,6],REPACK:[1,2,3,4,5]},hpd:{FGC2:24,POLIN:24,WAFER:24,FGC1:24,LASER:24},changeover:0,mode:'jit',buffer:2,runOrder:'stock',overPct:150,crates:0,repackHpd:24},onlyActive:true};
+  return {orders,opening:{date:todayISO(),stock},rates,lineOf,log:{},ref,settings:{start:todayISO(),workDays:[1,2,3,4,5],lineDays:{FGC2:[1,2,3,4,5],POLIN:[0,1,2,3,4,5,6],WAFER:[1,2,3,4,5],FGC1:[1,2,3,4,5],LASER:[1,2,3,4,5,6],REPACK:[1,2,3,4,5]},hpd:{FGC2:24,POLIN:24,WAFER:24,FGC1:24,LASER:24},changeover:0,mode:'jit',buffer:2,runOrder:'stock',overPct:150,crates:0,repackHpd:24,maxPerShift:2,shiftLen:12},onlyActive:true};
 }
 function merge(base,src){
   const s=JSON.parse(JSON.stringify(base));
@@ -376,12 +376,22 @@ function compute(){
   }
   const byStock=(st.runOrder||'stock')==='stock';
   Object.values(bis).forEach(b=>b.cover=b.req>0?b.stock/b.req:1);
+  const maxP=Math.max(0,Math.round(num(st.maxPerShift)));
+  // place runs one after another (in working hours), never more than maxP products in one shift
+  function place(runs,hpd){
+    const SL=Math.max(1,Math.min(num(st.shiftLen)||12,hpd||24)); const cnt={}; let cur=0;
+    runs.forEach((r,i)=>{ const h=r.ew-r.sw; let s0=Math.max(r.sw,i?cur+co:0);
+      if(maxP>0){ let g=0; while(g++<2000){ const fs=Math.floor(s0/SL+1e-9); if((cnt[fs]||0)>=maxP){ s0=(fs+1)*SL; continue } break } }
+      r.sw=s0; r.ew=s0+h;
+      if(maxP>0) for(let k=Math.floor(s0/SL+1e-9);k<=Math.floor((r.ew-1e-9)/SL);k++) cnt[k]=(cnt[k]||0)+1;
+      cur=r.ew; });
+  }
   const lines={}; const cal={};
   // pass 1: as soon as possible, in urgency order
   LINES.forEach(L=>{
     const hpd=Math.min(24,num(st.hpd[L.id])); const c=mkCal(hpd,daysOf(L.id)); cal[L.id]=c;
     const tasks=Object.values(bis).filter(b=>b.line===L.id&&b.short>0.5).sort(byStock?((a,b)=>(a.cover-b.cover)||((rank[a.id]??1e9)-(rank[b.id]??1e9))):((a,b)=>((rank[a.id]??1e9)-(rank[b.id]??1e9))||(a.hours-b.hours)));
-    let cur=0; const runs=tasks.map((b,i)=>{ if(i>0) cur+=co; const r={b,sw:cur,ew:cur+b.hours}; cur=r.ew; return r; });
+    const runs=tasks.map(b=>({b,sw:0,ew:b.hours})); place(runs,hpd);
     lines[L.id]={L,hpd,tasks,runs,hours:tasks.reduce((s,b)=>s+b.hours,0),kg:tasks.reduce((s,b)=>s+b.short,0),crates:tasks.reduce((s,b)=>s+b.crates,0),allBis:Object.values(bis).filter(b=>b.line===L.id)};
   });
   const endAbs=()=>{const e={};LINES.forEach(L=>lines[L.id].runs.forEach(r=>e[r.b.id]=cal[L.id].toAbs(r.ew,false)));return e};
@@ -398,7 +408,7 @@ function compute(){
       let lim=Infinity;
       byNeed.forEach(r=>{ const due=N1[r.b.id]; let ew=due!=null?c.absToWork(Math.max(0,due-buf)):r.ew; if(lim!==Infinity) ew=Math.min(ew,lim-co); r.ew=ew; r.sw=ew-r.b.hours; lim=r.sw; });
       l.runs.sort((a,b)=>a.sw-b.sw);
-      let cur=0; l.runs.forEach((r,i)=>{ const min=i?cur+co:0; if(r.sw<min){const s=min-r.sw;r.sw+=s;r.ew+=s} cur=r.ew; });
+      place(l.runs,c.hpd);
     });
   }
   const eF=endAbs(), RF=readyOf(eF), NF=needBy(RF), finalWait=waitStats(eF,NF);
@@ -691,12 +701,14 @@ function vSchedule(C){
     ${l.runs.length?`<ol class="seq">${l.runs.map(r=>`<li><span>${esc(r.b.name)} <span class="num muted">${n0(r.b.short)} kg</span></span><span class="when">${fmtWhen(C.toTime(r.start)).replace(/^\w+ /,'')} → ${fmtWhen(C.toTime(r.end)).replace(/^\w+ /,'')}</span><span class="why">${'Stock covers '+Math.round(Math.min(1,r.b.cover)*100)+'% · '}${r.forP?'for '+esc(r.forP.name)+(S.orders[r.forP.id].due?' (due '+fmtDay(parseDate(S.orders[r.forP.id].due))+')':'')+' · ':''}${r.wait>12?`<span class="chip warn">waits ${n1(r.wait)} h</span>`:r.wait>0.5?`waits ${n1(r.wait)} h before packing`:'packed as it comes off'}</span></li>`).join('')}</ol>`:'<div class="none">Nothing to make — stock covers these orders.</div>'}</section>`;
   }).join('');
   return `<section class="panel">
-    <div class="toolbar"><h2>Plan settings</h2><span class="muted" style="font-size:12px">${(st.runOrder||'stock')==='stock'?'Each line runs the biscuit with the least stock (compared with what the orders need) first. ':'Each line runs biscuits in order of the most urgent order. '}${st.mode==='asap'?'Every line starts straight away.':'The slowest line for each product sets its packing time. Other lines are timed so their biscuits come off just before packing, not days early.'} Days start at 06:00.</span></div>
+    <div class="toolbar"><h2>Plan settings</h2><span class="muted" style="font-size:12px">${(st.runOrder||'stock')==='stock'?'Each line runs the biscuit with the least stock (compared with what the orders need) first. ':'Each line runs biscuits in order of the most urgent order. '}${st.mode==='asap'?'Every line starts straight away.':'The slowest line for each product sets its packing time. Other lines are timed so their biscuits come off just before packing, not days early.'} Days start at 06:00, shifts 06:00–18:00 and 18:00–06:00${num(st.maxPerShift)?`, at most ${num(st.maxPerShift)} products per shift on each line`:''}.</span></div>
     <div class="settings">
       <label class="field"><b>Start date</b><input type="date" id="set-start" data-s="start" value="${esc(st.start)}"></label>
       <div class="field"><b>Timing</b><div class="days mode">${[['jit','Just in time'],['asap','As soon as possible']].map(([k,t])=>`<button data-mode="${k}" aria-pressed="${(st.mode||'jit')===k}">${t}</button>`).join('')}</div></div>
       <div class="field"><b>Run order on each line</b><div class="days mode">${[['stock','Lowest stock first'],['urgent','Most urgent order first']].map(([k,t])=>`<button data-ro="${k}" aria-pressed="${(st.runOrder||'stock')===k}">${t}</button>`).join('')}</div></div>
       <label class="field"><b>Ready before packing (h)</b><input type="text" inputmode="decimal" autocomplete="off" min="0" step="1" id="set-buf" data-s="buffer" value="${num(st.buffer)}" style="width:70px"></label>
+      <label class="field"><b>Max products per shift</b><input type="text" inputmode="decimal" autocomplete="off" id="set-mps" data-s="maxPerShift" value="${num(st.maxPerShift)}" style="width:70px"></label>
+      <label class="field"><b>Shift length (h)</b><input type="text" inputmode="decimal" autocomplete="off" id="set-sl" data-s="shiftLen" value="${num(st.shiftLen)||12}" style="width:70px"></label>
       <label class="field"><b>Changeover (h)</b><input type="text" inputmode="decimal" autocomplete="off" min="0" step="0.25" id="set-co" data-s="changeover" value="${num(st.changeover)}" style="width:70px"></label>
     </div>
     <div class="tablebox" style="max-width:720px"><table class="compact" style="min-width:0"><thead><tr><th>Line</th><th>Working days</th><th class="r">Hours / day</th></tr></thead><tbody>
@@ -982,7 +994,7 @@ $main.addEventListener('input',e=>{
   else if(t.id==='entry-date'){if(t.value){entryDate=t.value;clearTimeout(rt);rt=setTimeout(render,150)}}
   else if(t.dataset.rt){S.rates[t.dataset.rt]=num(t.value);changed()}
   else if(t.dataset.h){S.settings.hpd[t.dataset.h]=Math.min(24,num(t.value));changed()}
-  else if(t.dataset.s){S.settings[t.dataset.s]=t.dataset.s==='crates'?num(String(t.value).replace(/[^0-9.]/g,'')):(t.dataset.s==='changeover'||t.dataset.s==='buffer'||t.dataset.s==='overPct'||t.dataset.s==='repackHpd')?num(t.value):(t.value||todayISO());changed()}
+  else if(t.dataset.s){S.settings[t.dataset.s]=t.dataset.s==='crates'?num(String(t.value).replace(/[^0-9.]/g,'')):(t.dataset.s==='changeover'||t.dataset.s==='buffer'||t.dataset.s==='overPct'||t.dataset.s==='repackHpd'||t.dataset.s==='maxPerShift'||t.dataset.s==='shiftLen')?num(t.value):(t.value||todayISO());changed()}
 });
 $main.addEventListener('change',e=>{
   const t=e.target;
