@@ -706,7 +706,7 @@ function vLines(C){
 
 function vEntry(C){
   const LG=C.LG, d=entryDate, e=S.log[d]||{made:{},packed:{}}, before=d<LG.od;
-  const seg=`<div class="days mode">${[['day','Daily entry'],['onhand','Stock on hand'],['history','History']].map(([k,t])=>`<button data-ev="${k}" aria-pressed="${entryView===k}">${t}</button>`).join('')}</div>`;
+  const seg=`<div class="days mode">${[['day','Daily entry'],['onhand','Stock on hand'],['history','History'],['audit','Entry log']].map(([k,t])=>`<button data-ev="${k}" aria-pressed="${entryView===k}">${t}</button>`).join('')}</div>`;
   let body='';
   if(entryView==='day'){
     const start=stockAtStart(LG,d), use=dayUse(e);
@@ -759,6 +759,7 @@ function vEntry(C){
       <thead><tr><th>Biscuit</th><th class="r">Opening stock (kg)</th><th class="r">+ Produced</th><th class="r">− Used by packing</th><th class="r">= On hand now</th><th class="r">Needed by orders</th><th>Position</th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot><tr><td><b>Total</b></td><td class="r num"><b>${n0(tO)}</b></td><td class="r num">+${n0(tM)}</td><td class="r num">−${n0(tU)}</td><td class="r num"><b>${n0(tH)}</b></td><td></td><td></td></tr></tfoot></table></div>`;
+  } else if(entryView==='audit'){ body=vAudit();
   } else {
     const all=Object.keys(S.log).sort().reverse();
     const byDate=Object.fromEntries(LG.days.map(x=>[x.date,x]));
@@ -1027,12 +1028,58 @@ async function doSave(){
 function clean(v){return JSON.parse(JSON.stringify(v))}
 function errMsg(e){return /permission/i.test(String(e&&(e.code||e.message)))}
 window.USERS=[]; let umsg='', pwmsg='';
+let savedLog={}, AUDIT=[];
+function clone(v){return JSON.parse(JSON.stringify(v||{}))}
+async function audit(fb,d,old,nw){
+  savedLog[d]=clone(nw);
+  const me=window.ME||{}; const rows=[];
+  for(const kind of ['made','packed']){
+    const a=(old&&old[kind])||{}, b=(nw&&nw[kind])||{};
+    for(const id of new Set([...Object.keys(a),...Object.keys(b)])){
+      const f=num(a[id]), t=num(b[id]); if(Math.abs(f-t)<1e-9) continue;
+      rows.push({ts:fb.TS,at:new Date().toISOString(),uid:me.uid||'',name:me.name||me.email||'',day:d,kind,id,from:f,to:t});
+    }
+  }
+  for(const r of rows){try{await fb.push('assortment/audit',r)}catch(e){console.warn('audit',e)}}
+}
+let aFrom=null,aTo=null,aWho='all',aKind='all',aCopy='';
+function isoOf(x){return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0')}
+function auditRows(){
+  if(!aFrom){aTo=todayISO();aFrom=isoOf(addDays(parseDate(aTo),-6))}
+  return AUDIT.filter(r=>{const d=isoOf(new Date(r.ts||r.at));return d>=aFrom&&d<=aTo&&(aWho==='all'||r.uid===aWho)&&(aKind==='all'||r.kind===aKind)});
+}
+function itemName(r){return r.kind==='made'?(BIS[r.id]?BIS[r.id].name:r.id):(PR[r.id]?PR[r.id].name:r.id)}
+function stamp(r){const t=new Date(r.ts||r.at);return fmtDay(t)+' '+String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0')}
+function vAudit(){
+  const rows=auditRows();
+  const people=[...new Map(AUDIT.map(r=>[r.uid,r.name])).entries()];
+  let kg=0,cs=0; rows.forEach(r=>{if(r.kind==='made')kg+=r.to-r.from;else cs+=r.to-r.from});
+  const body=rows.map(r=>{const ch=r.to-r.from, unit=r.kind==='made'?'kg':'cs', L=r.kind==='made'&&BIS[r.id]?S.lineOf[r.id]:null;
+    return `<tr><td class="num" style="font-size:12px;white-space:nowrap">${stamp(r)}</td><td><b>${esc(r.name||'')}</b></td><td class="num" style="font-size:12px">${fmtDay(parseDate(r.day))}</td>
+    <td>${r.kind==='made'?'Kg produced':'Cases packed'}</td><td>${L?lineDot(L)+' ':''}${esc(itemName(r))}</td>
+    <td class="r num">${n0(r.from)}</td><td class="r num"><b>${n0(r.to)}</b></td><td class="r num" style="color:var(${ch<0?'--bad':'--ok'})">${ch>0?'+':'−'}${n0(Math.abs(ch))} ${unit}</td></tr>`}).join('');
+  return `<section class="panel" style="gap:10px"><div class="settings">
+    <label class="field"><b>From</b><input type="date" id="a-from" value="${aFrom}"></label>
+    <label class="field"><b>To</b><input type="date" id="a-to" value="${aTo}"></label>
+    <label class="field"><b>Person</b><select id="a-who"><option value="all">Everyone</option>${people.map(([u,n])=>`<option value="${esc(u)}"${aWho===u?' selected':''}>${esc(n||u)}</option>`).join('')}</select></label>
+    <label class="field"><b>Type</b><select id="a-kind">${[['all','Everything'],['made','Kg produced'],['packed','Cases packed']].map(([k,t])=>`<option value="${k}"${aKind===k?' selected':''}>${t}</option>`).join('')}</select></label>
+    <button class="btn primary" data-act="auditcopy">Copy for Excel</button><span class="muted" style="font-size:12px">${esc(aCopy)}</span></div>
+    <div class="muted" style="font-size:13px">${rows.length} change${rows.length===1?'':'s'} · net ${kg>=0?'+':'−'}${n0(Math.abs(kg))} kg produced · net ${cs>=0?'+':'−'}${n0(Math.abs(cs))} cases packed. Every save is recorded with the time and the person signed in; entries can't be edited or deleted.</div></section>
+  <div class="tablebox"><table><thead><tr><th>When entered</th><th>By</th><th>For day</th><th>Type</th><th>Item</th><th class="r">Before</th><th class="r">After</th><th class="r">Change</th></tr></thead>
+  <tbody>${body||'<tr class="dim"><td colspan="8">No entries in this period.</td></tr>'}</tbody></table></div>`;
+}
+function auditTSV(){return [['When entered','By','For day','Type','Item','Before','After','Change'].join('\t')].concat(auditRows().map(r=>[stamp(r),r.name,r.day,r.kind==='made'?'Kg produced':'Cases packed',itemName(r),r.from,r.to,r.to-r.from].join('\t'))).join('\n')}
+$main.addEventListener('change',e=>{const t=e.target;if(t.id==='a-from'&&t.value){aFrom=t.value;render()}else if(t.id==='a-to'&&t.value){aTo=t.value;render()}else if(t.id==='a-who'){aWho=t.value;render()}else if(t.id==='a-kind'){aKind=t.value;render()}});
+$main.addEventListener('click',e=>{const b=e.target.closest('button[data-act="auditcopy"]');if(!b)return;const t=auditTSV();const done=m=>{aCopy=m;render()};
+  try{navigator.clipboard.writeText(t).then(()=>done('Copied. Paste into Excel.'),()=>done('Copy blocked by the browser.'))}catch(_){done('Copy blocked by the browser.')}});
 window.APP={
   start(){try{const raw=localStorage.getItem('alp-plan');if(raw){S=merge(defaults(),JSON.parse(raw))}}catch(e){} render(); setSync('saving','Connecting…');},
   rerender(){render()},
   connect(fb){
     ref={set:v=>fb.set('assortment/plan',clean(v))};
-    logCol={doc:d=>({set:v=>fb.set('assortment/log/'+d,clean(v)),delete:()=>fb.remove('assortment/log/'+d)})};
+    logCol={doc:d=>({set:async v=>{const old=clone(savedLog[d]||{});await fb.set('assortment/log/'+d,clean(v));await audit(fb,d,old,v)},
+                     delete:async()=>{const old=clone(savedLog[d]||{});await fb.remove('assortment/log/'+d);await audit(fb,d,old,{})}})};
+    fb.onValue('assortment/audit',v=>{AUDIT=Object.entries(v||{}).map(([k,x])=>Object.assign({key:k},x)).sort((a,b)=>(b.ts||0)-(a.ts||0)||(a.key<b.key?1:-1));if(tab==='entry'&&entryView==='audit')render()},()=>{},1500);
     const bad=e=>{if(errMsg(e)){setSync('error','No access to the plan data')}else setSync('error','Connection lost. Reload to reconnect')};
     let seeded=false;
     fb.onValue('assortment/plan',v=>{
@@ -1044,6 +1091,7 @@ window.APP={
     },bad);
     fb.onValue('assortment/log',v=>{
       if(logSaving) return;
+      savedLog=clone(v||{});
       const next={}; for(const d in (v||{})){const x=v[d]||{};next[d]={made:Object.assign({},x.made||{}),packed:Object.assign({},x.packed||{})}}
       logDirty.forEach(d=>{if(S.log[d])next[d]=S.log[d];else delete next[d]});
       S.log=next; saveLocal(); render();
@@ -1109,7 +1157,7 @@ APP.start();
 <script type="module">
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail, updatePassword, EmailAuthProvider, reauthenticateWithCredential, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
-import { getDatabase, ref, set, get, update, remove, onValue } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
+import { getDatabase, ref, set, get, update, remove, onValue, push, serverTimestamp, query, limitToLast } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
 const FIREBASE_CONFIG = {
   "apiKey": "AIzaSyARe2fDFQDW3oXSkltSbyMLeHNqNhkLKow",
   "authDomain": "cbm-assortment-planner.firebaseapp.com",
@@ -1201,7 +1249,7 @@ async function handleUser(u) {
   if (window.PERM.isAdmin) watchUsers();
   if (!connected) {
     connected = true;
-    window.APP.connect({ set: (p, v) => set(ref(db, p), v), remove: p => remove(ref(db, p)), onValue: (p, cb, err) => onValue(ref(db, p), s => cb(s.val()), err) });
+    window.APP.connect({ TS: serverTimestamp(), push: (p, v) => push(ref(db, p), v), set: (p, v) => set(ref(db, p), v), remove: p => remove(ref(db, p)), onValue: (p, cb, err, lim) => onValue(lim ? query(ref(db, p), limitToLast(lim)) : ref(db, p), s => cb(s.val()), err) });
   }
   window.APP.rerender();
 }

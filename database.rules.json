@@ -27,6 +27,16 @@
       "log": {
         ".read": "auth != null && root.child('assortment/users/'+auth.uid).exists() && root.child('assortment/users/'+auth.uid+'/disabled').val() !== true",
         ".write": "auth != null && root.child('assortment/users/'+auth.uid).exists() && root.child('assortment/users/'+auth.uid+'/disabled').val() !== true && (root.child('assortment/users/'+auth.uid+'/role').val() === 'admin' || root.child('assortment/users/'+auth.uid+'/role').val() === 'planner' || root.child('assortment/users/'+auth.uid+'/role').val() === 'shift')"
+      },
+      "audit": {
+        ".read": "auth != null && root.child('assortment/users/'+auth.uid).exists() && root.child('assortment/users/'+auth.uid+'/disabled').val() !== true",
+        ".indexOn": [
+          "ts"
+        ],
+        "$id": {
+          ".write": "auth != null && root.child('assortment/users/'+auth.uid).exists() && root.child('assortment/users/'+auth.uid+'/disabled').val() !== true && (root.child('assortment/users/'+auth.uid+'/role').val() === 'admin' || root.child('assortment/users/'+auth.uid+'/role').val() === 'planner' || root.child('assortment/users/'+auth.uid+'/role').val() === 'shift') && !data.exists() && newData.child('uid').val() === auth.uid",
+          ".validate": "newData.hasChildren(['ts','uid','name','day','kind','id','from','to'])"
+        }
       }
     }
   }
