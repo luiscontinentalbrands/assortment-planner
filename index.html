@@ -272,7 +272,7 @@ function defaults(){
   SEED.biscuits.forEach(b=>{stock[b.id]=b.stock;rates[b.id]=b.kgph;lineOf[b.id]=b.line});
   const ref={repack:{},crate:{},pieceG:{},packs:JSON.parse(JSON.stringify(PACKS0))};
   SEED.products.forEach(p=>ref.repack[p.id]=p.repack||0);SEED.biscuits.forEach(b=>{ref.crate[b.id]=b.crate;ref.pieceG[b.id]=0});
-  return {orders,opening:{date:todayISO(),stock},rates,lineOf,log:{},ref,settings:{start:todayISO(),workDays:[1,2,3,4,5],lineDays:{FGC2:[1,2,3,4,5],POLIN:[0,1,2,3,4,5,6],WAFER:[1,2,3,4,5],FGC1:[1,2,3,4,5],LASER:[1,2,3,4,5,6],REPACK:[1,2,3,4,5]},hpd:{FGC2:24,POLIN:24,WAFER:24,FGC1:24,LASER:24},changeover:0,mode:'jit',buffer:2,runOrder:'stock',overPct:150,crates:0,repackHpd:24,shiftMax:{FGC2:{d:2,n:1},POLIN:{d:2,n:1},LASER:{d:2,n:1},WAFER:{d:0,n:0},FGC1:{d:0,n:0}}},onlyActive:true};
+  return {orders,opening:{date:todayISO(),stock},rates,lineOf,log:{},ref,settings:{start:todayISO(),workDays:[1,2,3,4,5],lineDays:{FGC2:[1,2,3,4,5],POLIN:[0,1,2,3,4,5,6],WAFER:[1,2,3,4,5],FGC1:[1,2,3,4,5],LASER:[1,2,3,4,5,6],REPACK:[1,2,3,4,5]},hpd:{FGC2:24,POLIN:24,WAFER:24,FGC1:24,LASER:24},changeover:0,mode:'jit',buffer:2,runOrder:'stock',overPct:150,crates:0,repackHpd:24,eff:{FGC2:100,POLIN:100,WAFER:100,FGC1:100,LASER:100},shiftMax:{FGC2:{d:2,n:1},POLIN:{d:2,n:1},LASER:{d:2,n:1},WAFER:{d:0,n:0},FGC1:{d:0,n:0}}},onlyActive:true};
 }
 function merge(base,src){
   const s=JSON.parse(JSON.stringify(base));
@@ -282,7 +282,7 @@ function merge(base,src){
   if(op){ if(op.date) s.opening.date=op.date; if(op.stock) for(const id in op.stock) if(id in s.opening.stock) s.opening.stock[id]=op.stock[id]; }
   if(src.log) s.log=JSON.parse(JSON.stringify(src.log));
   if(src.ref) for(const k of ['repack','crate','pieceG','packs']) if(src.ref[k]) for(const id in src.ref[k]) if(id in s.ref[k]) s.ref[k][id]=(k==='packs'?Object.assign({},s.ref[k][id],src.ref[k][id]):src.ref[k][id]);
-  if(src.settings){Object.assign(s.settings,src.settings);s.settings.hpd=Object.assign({},base.settings.hpd,src.settings.hpd||{});s.settings.lineDays=Object.assign({},base.settings.lineDays,src.settings.lineDays||{});s.settings.shiftMax=Object.assign({},base.settings.shiftMax,src.settings.shiftMax||{})}
+  if(src.settings){Object.assign(s.settings,src.settings);s.settings.hpd=Object.assign({},base.settings.hpd,src.settings.hpd||{});s.settings.lineDays=Object.assign({},base.settings.lineDays,src.settings.lineDays||{});s.settings.shiftMax=Object.assign({},base.settings.shiftMax,src.settings.shiftMax||{});s.settings.eff=Object.assign({},base.settings.eff,src.settings.eff||{})}
   if('onlyActive' in src) s.onlyActive=src.onlyActive;
   return s;
 }
@@ -354,7 +354,7 @@ function compute(){
   // shortfall per biscuit
   const bis={};
   SEED.biscuits.forEach(b=>{
-    const stock=onHand[b.id], r=req[b.id], short=Math.max(0,r-stock), rate=num(S.rates[b.id])||1;
+    const stock=onHand[b.id], r=req[b.id], short=Math.max(0,r-stock), rate=(num(S.rates[b.id])||1)*Math.max(0.05,(num((st.eff||{})[lineOf[b.id]])||100)/100);
     bis[b.id]={id:b.id,name:b.name,line:lineOf[b.id],req:r,stock,short,hours:short/rate,crates:short/(num(S.ref.crate[b.id])||b.crate||1),rate,crate:num(S.ref.crate[b.id])||b.crate};
   });
   // rank of each biscuit = position of most urgent product that still needs it
@@ -718,13 +718,13 @@ function vSchedule(C){
       <label class="field"><b>Ready before packing (h)</b><input type="text" inputmode="decimal" autocomplete="off" min="0" step="1" id="set-buf" data-s="buffer" value="${num(st.buffer)}" style="width:70px"></label>
       <label class="field"><b>Changeover (h)</b><input type="text" inputmode="decimal" autocomplete="off" min="0" step="0.25" id="set-co" data-s="changeover" value="${num(st.changeover)}" style="width:70px"></label>
     </div>
-    <div class="tablebox" style="max-width:900px"><table class="compact" style="min-width:0"><thead><tr><th>Line</th><th>Working days</th><th class="r">Hours / day</th><th class="r">Max products<br>day shift</th><th class="r">Max products<br>night shift</th></tr></thead><tbody>
+    <div class="tablebox" style="max-width:900px"><table class="compact" style="min-width:0"><thead><tr><th>Line</th><th>Working days</th><th class="r">Hours / day</th><th class="r">Efficiency %</th><th class="r">Max products<br>day shift</th><th class="r">Max products<br>night shift</th></tr></thead><tbody>
     ${[...LINES.map(L=>({id:L.id,name:L.name})),{id:'REPACK',name:'Repacking'}].map(r=>{const ds=(st.lineDays&&st.lineDays[r.id])||st.workDays;const h=r.id==='REPACK'?(num(st.repackHpd)||24):num(st.hpd[r.id]);
       return `<tr><td><span class="lname" style="font-size:14px">${r.id==='REPACK'?'<i class="sw" style="background:var(--accent)"></i>':lineDot(r.id)}${r.name}</span></td><td><div class="days">${[1,2,3,4,5,6,0].map(d=>`<button data-ld="${r.id}" data-wd="${d}" aria-pressed="${ds.includes(d)}">${DAYN[d]}</button>`).join('')}</div></td>
       <td class="r"><input type="text" inputmode="decimal" autocomplete="off" id="hpd-${r.id}" ${r.id==='REPACK'?'data-s="repackHpd"':`data-h="${r.id}"`} value="${h}" style="width:64px"></td>
-      ${r.id==='REPACK'?'<td></td><td></td>':(()=>{const m=(st.shiftMax&&st.shiftMax[r.id])||{d:0,n:0};return `<td class="r"><input type="text" inputmode="decimal" autocomplete="off" id="smd-${r.id}" data-sm="${r.id}" data-k="d" value="${num(m.d)||''}" placeholder="any" style="width:56px"></td><td class="r"><input type="text" inputmode="decimal" autocomplete="off" id="smn-${r.id}" data-sm="${r.id}" data-k="n" value="${num(m.n)||''}" placeholder="any" style="width:56px"></td>`})()}</tr>`}).join('')}
+      ${r.id==='REPACK'?'<td></td><td></td><td></td>':(()=>{const m=(st.shiftMax&&st.shiftMax[r.id])||{d:0,n:0};return `<td class="r"><input type="text" inputmode="decimal" autocomplete="off" id="eff-${r.id}" data-eff="${r.id}" value="${num((st.eff||{})[r.id])||100}" style="width:56px"></td><td class="r"><input type="text" inputmode="decimal" autocomplete="off" id="smd-${r.id}" data-sm="${r.id}" data-k="d" value="${num(m.d)||''}" placeholder="any" style="width:56px"></td><td class="r"><input type="text" inputmode="decimal" autocomplete="off" id="smn-${r.id}" data-sm="${r.id}" data-k="n" value="${num(m.n)||''}" placeholder="any" style="width:56px"></td>`})()}</tr>`}).join('')}
     </tbody></table></div>
-    <div class="muted" style="font-size:12px">Max products: 1 = no product change in that shift (the run from the previous shift carries on, the next product waits for the next shift); empty = no limit.</div>
+    <div class="muted" style="font-size:12px">Efficiency % = real output compared with the workbook kg per hour (breaks, cleaning, start-up, slow running). Max products: 1 = no product change in that shift (the run from the previous shift carries on, the next product waits for the next shift); empty = no limit.</div>
   </section>
   <section style="display:grid;gap:8px"><h2>Line schedule</h2>
   <div class="gantt"><div class="g-inner" style="width:${96+days*W}px">
@@ -1002,6 +1002,7 @@ $main.addEventListener('input',e=>{
   else if(t.dataset.od){if(t.value){S.opening.date=t.value;changed()}}
   else if(t.id==='entry-date'){if(t.value){entryDate=t.value;clearTimeout(rt);rt=setTimeout(render,150)}}
   else if(t.dataset.rt){S.rates[t.dataset.rt]=num(t.value);changed()}
+  else if(t.dataset.eff){S.settings.eff=Object.assign({},S.settings.eff||{});S.settings.eff[t.dataset.eff]=num(t.value)||100;changed()}
   else if(t.dataset.sm){S.settings.shiftMax=S.settings.shiftMax||{};const m=Object.assign({d:0,n:0},S.settings.shiftMax[t.dataset.sm]);m[t.dataset.k]=num(t.value);S.settings.shiftMax[t.dataset.sm]=m;changed()}
   else if(t.dataset.h){S.settings.hpd[t.dataset.h]=Math.min(24,num(t.value));changed()}
   else if(t.dataset.s){S.settings[t.dataset.s]=t.dataset.s==='crates'?num(String(t.value).replace(/[^0-9.]/g,'')):(t.dataset.s==='changeover'||t.dataset.s==='buffer'||t.dataset.s==='overPct'||t.dataset.s==='repackHpd')?num(t.value):(t.value||todayISO());changed()}
