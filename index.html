@@ -272,7 +272,7 @@ function defaults(){
   SEED.biscuits.forEach(b=>{stock[b.id]=b.stock;rates[b.id]=b.kgph;lineOf[b.id]=b.line});
   const ref={repack:{},crate:{},pieceG:{},packs:JSON.parse(JSON.stringify(PACKS0))};
   SEED.products.forEach(p=>ref.repack[p.id]=p.repack||0);SEED.biscuits.forEach(b=>{ref.crate[b.id]=b.crate;ref.pieceG[b.id]=0});
-  return {orders,opening:{date:todayISO(),stock},rates,lineOf,log:{},ref,settings:{start:todayISO(),workDays:[1,2,3,4,5],hpd:{FGC2:24,POLIN:24,WAFER:24,FGC1:24,LASER:24},changeover:0,mode:'jit',buffer:2,runOrder:'stock',overPct:150,crates:0,repackHpd:24},onlyActive:true};
+  return {orders,opening:{date:todayISO(),stock},rates,lineOf,log:{},ref,settings:{start:todayISO(),workDays:[1,2,3,4,5],lineDays:{FGC2:[1,2,3,4,5],POLIN:[0,1,2,3,4,5,6],WAFER:[1,2,3,4,5],FGC1:[1,2,3,4,5],LASER:[1,2,3,4,5,6],REPACK:[1,2,3,4,5]},hpd:{FGC2:24,POLIN:24,WAFER:24,FGC1:24,LASER:24},changeover:0,mode:'jit',buffer:2,runOrder:'stock',overPct:150,crates:0,repackHpd:24},onlyActive:true};
 }
 function merge(base,src){
   const s=JSON.parse(JSON.stringify(base));
@@ -282,7 +282,7 @@ function merge(base,src){
   if(op){ if(op.date) s.opening.date=op.date; if(op.stock) for(const id in op.stock) if(id in s.opening.stock) s.opening.stock[id]=op.stock[id]; }
   if(src.log) s.log=JSON.parse(JSON.stringify(src.log));
   if(src.ref) for(const k of ['repack','crate','pieceG','packs']) if(src.ref[k]) for(const id in src.ref[k]) if(id in s.ref[k]) s.ref[k][id]=(k==='packs'?Object.assign({},s.ref[k][id],src.ref[k][id]):src.ref[k][id]);
-  if(src.settings){Object.assign(s.settings,src.settings);s.settings.hpd=Object.assign({},base.settings.hpd,src.settings.hpd||{})}
+  if(src.settings){Object.assign(s.settings,src.settings);s.settings.hpd=Object.assign({},base.settings.hpd,src.settings.hpd||{});s.settings.lineDays=Object.assign({},base.settings.lineDays,src.settings.lineDays||{})}
   if('onlyActive' in src) s.onlyActive=src.onlyActive;
   return s;
 }
@@ -364,7 +364,9 @@ function compute(){
   const work=new Set(st.workDays);
   const co=num(st.changeover), buf=num(st.buffer);
   const isWork=d=>work.has(addDays(start,d).getDay());
-  function mkCal(hpd){
+  const daysOf=k=>new Set((st.lineDays&&st.lineDays[k])||st.workDays);
+  function mkCal(hpd,days){
+    const wd=days||work; const isWork=d=>wd.has(addDays(start,d).getDay());
     return {
       hpd,
       absToWork(abs){ if(hpd<=0) return 0; const D=Math.floor(abs/24), h=abs-D*24; let w=0; for(let d=0;d<D&&d<800;d++) if(isWork(d)) w+=hpd; if(isWork(D)) w+=Math.min(h,hpd); return w; },
@@ -377,7 +379,7 @@ function compute(){
   const lines={}; const cal={};
   // pass 1: as soon as possible, in urgency order
   LINES.forEach(L=>{
-    const hpd=Math.min(24,num(st.hpd[L.id])); const c=mkCal(hpd); cal[L.id]=c;
+    const hpd=Math.min(24,num(st.hpd[L.id])); const c=mkCal(hpd,daysOf(L.id)); cal[L.id]=c;
     const tasks=Object.values(bis).filter(b=>b.line===L.id&&b.short>0.5).sort(byStock?((a,b)=>(a.cover-b.cover)||((rank[a.id]??1e9)-(rank[b.id]??1e9))):((a,b)=>((rank[a.id]??1e9)-(rank[b.id]??1e9))||(a.hours-b.hours)));
     let cur=0; const runs=tasks.map((b,i)=>{ if(i>0) cur+=co; const r={b,sw:cur,ew:cur+b.hours}; cur=r.ew; return r; });
     lines[L.id]={L,hpd,tasks,runs,hours:tasks.reduce((s,b)=>s+b.hours,0),kg:tasks.reduce((s,b)=>s+b.short,0),crates:tasks.reduce((s,b)=>s+b.crates,0),allBis:Object.values(bis).filter(b=>b.line===L.id)};
@@ -439,7 +441,7 @@ function compute(){
     if(I.packNow>0) jobs.push({x,i,cases:I.packNow,avail:0,cpc});
     if(I.rem>I.packNow) jobs.push({x,i,cases:I.rem-I.packNow,avail:RF[x.p.id]??0,cpc});});
   jobs.sort((a,b)=>a.avail-b.avail||a.i-b.i);
-  const rc=mkCal(Math.min(24,num(st.repackHpd)||24));
+  const rc=mkCal(Math.min(24,num(st.repackHpd)||24),daysOf('REPACK'));
   let rtW=0, rt=0; const repJobs=[], packEnd={}, packStart={}, noRate={};
   jobs.forEach(j=>{const rate=num(S.ref.repack[j.x.p.id]);const pid=j.x.p.id;const tot=j.cases*j.cpc;
     for(const b in info[pid].per) emptyBis[b]=(emptyBis[b]||0)+j.cases*info[pid].per[b]/ck(b);
@@ -670,11 +672,12 @@ function vSchedule(C){
   const st=S.settings;
   const days=Math.max(7,Math.min(60,C.horizon+1));
   const W=76; // px per day
-  const work=new Set(st.workDays);
+  const ld=k=>new Set((st.lineDays&&st.lineDays[k])||st.workDays);
+  const work=new Set(LINES.flatMap(L=>[...ld(L.id)]));
   const head=[];for(let i=0;i<days;i++){const d=addDays(C.start,i);head.push(`<div class="c${work.has(d.getDay())?'':' off'}" style="width:${W}px"><b>${DAYN[d.getDay()]}</b>${d.getDate()} ${MON[d.getMonth()]}</div>`)}
   const rows=LINES.map(L=>{
     const l=C.lines[L.id];
-    const cells=[];for(let i=0;i<days;i++){const d=addDays(C.start,i);cells.push(`<div class="c${work.has(d.getDay())?'':' off'}" style="width:${W}px"></div>`)}
+    const lw=ld(L.id);const cells=[];for(let i=0;i<days;i++){const d=addDays(C.start,i);cells.push(`<div class="c${lw.has(d.getDay())?'':' off'}" style="width:${W}px"></div>`)}
     const blks=l.segs.filter(s=>s.day<days).map(s=>{
       const left=s.day*W+(s.from/24)*W, w=Math.max(2,((s.to-s.from)/24)*W);
       if(s.kind==='co') return `<div class="blk co" style="left:${left}px;width:${w}px" title="Changeover"></div>`;
@@ -691,14 +694,16 @@ function vSchedule(C){
     <div class="toolbar"><h2>Plan settings</h2><span class="muted" style="font-size:12px">${(st.runOrder||'stock')==='stock'?'Each line runs the biscuit with the least stock (compared with what the orders need) first. ':'Each line runs biscuits in order of the most urgent order. '}${st.mode==='asap'?'Every line starts straight away.':'The slowest line for each product sets its packing time. Other lines are timed so their biscuits come off just before packing, not days early.'} Days start at 06:00.</span></div>
     <div class="settings">
       <label class="field"><b>Start date</b><input type="date" id="set-start" data-s="start" value="${esc(st.start)}"></label>
-      <div class="field"><b>Working days</b><div class="days">${[1,2,3,4,5,6,0].map(d=>`<button data-wd="${d}" aria-pressed="${st.workDays.includes(d)}">${DAYN[d]}</button>`).join('')}</div></div>
       <div class="field"><b>Timing</b><div class="days mode">${[['jit','Just in time'],['asap','As soon as possible']].map(([k,t])=>`<button data-mode="${k}" aria-pressed="${(st.mode||'jit')===k}">${t}</button>`).join('')}</div></div>
       <div class="field"><b>Run order on each line</b><div class="days mode">${[['stock','Lowest stock first'],['urgent','Most urgent order first']].map(([k,t])=>`<button data-ro="${k}" aria-pressed="${(st.runOrder||'stock')===k}">${t}</button>`).join('')}</div></div>
       <label class="field"><b>Ready before packing (h)</b><input type="text" inputmode="decimal" autocomplete="off" min="0" step="1" id="set-buf" data-s="buffer" value="${num(st.buffer)}" style="width:70px"></label>
-      <label class="field"><b>Repacking hours / day</b><input type="text" inputmode="decimal" autocomplete="off" id="set-rhpd" data-s="repackHpd" value="${num(st.repackHpd)||24}" style="width:70px"></label>
       <label class="field"><b>Changeover (h)</b><input type="text" inputmode="decimal" autocomplete="off" min="0" step="0.25" id="set-co" data-s="changeover" value="${num(st.changeover)}" style="width:70px"></label>
-      <div class="field"><b>Hours per day, by line</b><div class="hpd">${LINES.map(L=>`<label>${lineDot(L.id)}${L.name}<input type="text" inputmode="decimal" autocomplete="off" min="0" max="24" step="1" id="hpd-${L.id}" data-h="${L.id}" value="${num(st.hpd[L.id])}"></label>`).join('')}</div></div>
     </div>
+    <div class="tablebox" style="max-width:720px"><table class="compact" style="min-width:0"><thead><tr><th>Line</th><th>Working days</th><th class="r">Hours / day</th></tr></thead><tbody>
+    ${[...LINES.map(L=>({id:L.id,name:L.name})),{id:'REPACK',name:'Repacking'}].map(r=>{const ds=(st.lineDays&&st.lineDays[r.id])||st.workDays;const h=r.id==='REPACK'?(num(st.repackHpd)||24):num(st.hpd[r.id]);
+      return `<tr><td><span class="lname" style="font-size:14px">${r.id==='REPACK'?'<i class="sw" style="background:var(--accent)"></i>':lineDot(r.id)}${r.name}</span></td><td><div class="days">${[1,2,3,4,5,6,0].map(d=>`<button data-ld="${r.id}" data-wd="${d}" aria-pressed="${ds.includes(d)}">${DAYN[d]}</button>`).join('')}</div></td>
+      <td class="r"><input type="text" inputmode="decimal" autocomplete="off" id="hpd-${r.id}" ${r.id==='REPACK'?'data-s="repackHpd"':`data-h="${r.id}"`} value="${h}" style="width:64px"></td></tr>`}).join('')}
+    </tbody></table></div>
   </section>
   <section style="display:grid;gap:8px"><h2>Line schedule</h2>
   <div class="gantt"><div class="g-inner" style="width:${96+days*W}px">
@@ -999,7 +1004,7 @@ $main.addEventListener('click',e=>{
   if(b.dataset.open){entryDate=b.dataset.open;entryView='day';render();return}
   if(b.dataset.ro){if(readOnly||!PERM.canPlan)return;S.settings.runOrder=b.dataset.ro;changed();return}
   if(b.dataset.mode){if(readOnly||!PERM.canPlan)return;S.settings.mode=b.dataset.mode;changed();return}
-  if(b.dataset.wd!=null){if(readOnly||!PERM.canPlan)return;const d=+b.dataset.wd;const w=new Set(S.settings.workDays);w.has(d)?w.delete(d):w.add(d);S.settings.workDays=[...w];changed();return}
+  if(b.dataset.wd!=null){if(readOnly||!PERM.canPlan)return;const d=+b.dataset.wd;const k=b.dataset.ld;S.settings.lineDays=S.settings.lineDays||{};const w=new Set(k?(S.settings.lineDays[k]||S.settings.workDays):S.settings.workDays);w.has(d)?w.delete(d):w.add(d);if(k)S.settings.lineDays[k]=[...w];else S.settings.workDays=[...w];changed();return}
   if(b.dataset.pv){planView=b.dataset.pv;copyMsg='';render();return}
   const a=b.dataset.act;if(!a)return;
   if(a==='copy'){const t=planTSV(compute());const done=m=>{copyMsg=m;const el=document.getElementById('copymsg');if(el)el.textContent=m};
