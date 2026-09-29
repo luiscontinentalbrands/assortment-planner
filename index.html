@@ -272,7 +272,7 @@ function defaults(){
   SEED.biscuits.forEach(b=>{stock[b.id]=b.stock;rates[b.id]=b.kgph;lineOf[b.id]=b.line});
   const ref={repack:{},crate:{},pieceG:{},packs:JSON.parse(JSON.stringify(PACKS0))};
   SEED.products.forEach(p=>ref.repack[p.id]=p.repack||0);SEED.biscuits.forEach(b=>{ref.crate[b.id]=b.crate;ref.pieceG[b.id]=0});
-  return {orders,opening:{date:todayISO(),stock},rates,lineOf,log:{},ref,settings:{start:todayISO(),workDays:[1,2,3,4,5],hpd:{FGC2:24,POLIN:24,WAFER:24,FGC1:24,LASER:24},changeover:0,mode:'jit',buffer:2,runOrder:'stock',overPct:150,crates:0},onlyActive:true};
+  return {orders,opening:{date:todayISO(),stock},rates,lineOf,log:{},ref,settings:{start:todayISO(),workDays:[1,2,3,4,5],hpd:{FGC2:24,POLIN:24,WAFER:24,FGC1:24,LASER:24},changeover:0,mode:'jit',buffer:2,runOrder:'stock',overPct:150,crates:0,repackHpd:24},onlyActive:true};
 }
 function merge(base,src){
   const s=JSON.parse(JSON.stringify(base));
@@ -419,7 +419,7 @@ function compute(){
     if(l.finish) horizon=Math.max(horizon,l.finish.day+1);
   });
   const toTime=e=>e?{date:addDays(start,e.day),hour:e.hour,abs:e.day*24+e.hour}:null;
-  const absT=a=>{const d=Math.floor((a-1e-6)/24);return toTime({day:d,hour:a-d*24})};
+  const absT=a=>{const d=Math.max(0,Math.floor((a-1e-6)/24));return toTime({day:d,hour:a-d*24})};
   const plist=prods.map(x=>{
     const I=info[x.p.id]; if(!I) return {x,I:null};
     const ready=RF[x.p.id]!=null?absT(RF[x.p.id]):null;
@@ -439,12 +439,19 @@ function compute(){
     if(I.packNow>0) jobs.push({x,i,cases:I.packNow,avail:0,cpc});
     if(I.rem>I.packNow) jobs.push({x,i,cases:I.rem-I.packNow,avail:RF[x.p.id]??0,cpc});});
   jobs.sort((a,b)=>a.avail-b.avail||a.i-b.i);
-  let rt=0; const repJobs=[];
-  jobs.forEach(j=>{const rate=num(S.ref.repack[j.x.p.id]);const st0=Math.max(rt,j.avail);const dur=rate?j.cases/rate:0;const en=st0+dur;if(rate)rt=en;
-    repJobs.push({p:j.x.p,cases:j.cases,start:st0,end:en,rate});
-    const tot=j.cases*j.cpc;
-    for(const b in info[j.x.p.id].per) emptyBis[b]=(emptyBis[b]||0)+j.cases*info[j.x.p.id].per[b]/ck(b);
-    spread(emptyH,st0,en,tot);spread(casesH,st0,en,j.cases);});
+  const rc=mkCal(Math.min(24,num(st.repackHpd)||24));
+  let rtW=0, rt=0; const repJobs=[], packEnd={}, packStart={}, noRate={};
+  jobs.forEach(j=>{const rate=num(S.ref.repack[j.x.p.id]);const pid=j.x.p.id;const tot=j.cases*j.cpc;
+    for(const b in info[pid].per) emptyBis[b]=(emptyBis[b]||0)+j.cases*info[pid].per[b]/ck(b);
+    if(!rate){noRate[pid]=true;repJobs.push({p:j.x.p,cases:j.cases,start:j.avail,end:j.avail,rate:0});spread(emptyH,j.avail,j.avail,tot);spread(casesH,j.avail,j.avail,j.cases);packEnd[pid]=Math.max(packEnd[pid]??0,j.avail);if(packStart[pid]==null)packStart[pid]=j.avail;return}
+    const sw=Math.max(rtW,rc.absToWork(j.avail)), ew=sw+j.cases/rate; rtW=ew;
+    const sa=rc.toAbs(sw,true), ea=rc.toAbs(ew,false); rt=Math.max(rt,ea);
+    repJobs.push({p:j.x.p,cases:j.cases,start:sa,end:ea,rate});
+    rc.segs(sw,ew).forEach(g=>{const f=(g.to-g.from)/(ew-sw);spread(emptyH,g.day*24+g.from,g.day*24+g.to,tot*f);spread(casesH,g.day*24+g.from,g.day*24+g.to,j.cases*f)});
+    packEnd[pid]=Math.max(packEnd[pid]??0,ea); if(packStart[pid]==null||sa<packStart[pid])packStart[pid]=sa;});
+  plist.forEach(pl=>{if(!pl.I)return;const pid=pl.x.p.id;if(packEnd[pid]==null)return;
+    pl.packedAt=absT(packEnd[pid]); pl.packStart=absT(packStart[pid]); pl.noRate=!!noRate[pid];
+    if(pl.x.o.due) pl.late=pl.packedAt.date>parseDate(pl.x.o.due);});
   const lastH=Math.max(0,...Object.keys(fillH).map(Number),...Object.keys(emptyH).map(Number));
   const total=num(st.crates); let cur=inUseNow, peak={v:inUseNow,day:-1}; const crDays=[];
   for(let d=0;d*24<=lastH;d++){const s0=cur;let f=0,e=0,cs=0,pk=cur;
@@ -461,6 +468,7 @@ function statusChip(pl){
   if(!pl.I) return '<span class="chip idle">No order</span>';
   if(pl.I.packNow>=pl.I.rem) return '<span class="chip ok">Pack now from stock</span>';
   if(pl.late) return '<span class="chip bad">Late for due date</span>';
+  if(pl.I.packNow>=pl.I.rem) return '<span class="chip ok">Pack now from stock</span>';
   if(pl.I.packNow>0) return '<span class="chip warn">Part from stock</span>';
   return '<span class="chip warn">Waiting on production</span>';
 }
@@ -474,7 +482,7 @@ function render(){
   const oh=Object.values(C.LG.onHand).reduce((a,v)=>a+Math.max(0,v),0);
   let fin=null;LINES.forEach(L=>{const f=C.lines[L.id].finish;if(f&&(!fin||f.day*24+f.hour>fin.day*24+fin.hour))fin=f});
   const lastDay=C.LG.days.length?C.LG.days[C.LG.days.length-1].date:null;
-  document.getElementById('sidekpi').innerHTML=`<div><span>Cases outstanding</span><b>${n0(rem)}</b></div><div><span>Packable now</span><b>${n0(now)}</b></div><div><span>Kg to produce</span><b>${n0(C.totalShort)}</b></div><div><span>Stock on hand</span><b>${n0(oh)} kg</b></div><div><span>Crates free</span><b>${C.crates.total?n0(C.crates.total-C.crates.inUseNow):'—'}</b></div><div><span>All made by</span><b>${fin?fmtWhen(C.toTime(fin)).split(',')[0]:'—'}</b></div><div><span>Last entry</span><b>${lastDay?fmtDay(parseDate(lastDay)):'None yet'}</b></div>`;
+  document.getElementById('sidekpi').innerHTML=`<div><span>Cases outstanding</span><b>${n0(rem)}</b></div><div><span>Packable now</span><b>${n0(now)}</b></div><div><span>Kg to produce</span><b>${n0(C.totalShort)}</b></div><div><span>Stock on hand</span><b>${n0(oh)} kg</b></div><div><span>Crates free</span><b>${C.crates.total?n0(C.crates.total-C.crates.inUseNow):'—'}</b></div><div><span>All made by</span><b>${fin?fmtWhen(C.toTime(fin)).split(',')[0]:'—'}</b></div><div><span>All packed by</span><b>${(()=>{let m=null;C.plist.forEach(p=>{if(p.packedAt&&(!m||p.packedAt.abs>m.abs))m=p.packedAt});return m?fmtWhen(m).split(',')[0]:'—'})()}</b></div><div><span>Last entry</span><b>${lastDay?fmtDay(parseDate(lastDay)):'None yet'}</b></div>`;
   restoreFocus(f);
   applyPerms();
 }
@@ -487,11 +495,14 @@ function vOverview(C){
   const hours=lineArr.reduce((s,l)=>s+l.hours,0);
   const maxDays=Math.max(1,...lineArr.map(l=>l.hpd?l.hours/l.hpd:0));
   const recs=buildRecs(C);
+  const del=C.plist.filter(p=>p.I).sort((a,b)=>(a.packedAt?a.packedAt.abs:1e9)-(b.packedAt?b.packedAt.abs:1e9));
+  let lastPack=null; del.forEach(p=>{if(p.packedAt&&(!lastPack||p.packedAt.abs>lastPack.abs))lastPack=p.packedAt});
+  const delRows=del.map(p=>`<tr${p.late?' class="pos-short"':''}><td><span class="pname">${esc(p.x.p.name)}</span><span class="dots">${p.lineSet.map(l=>lineDot(l)).join('')}</span></td><td class="r num">${n0(p.I.rem)}</td><td class="r num">${n0(p.I.packNow)}</td><td class="num" style="font-size:12px">${p.I.packNow>=p.I.rem?'Now (stock)':fmtWhen(p.ready)}</td><td class="num" style="font-size:12px">${p.packStart?fmtWhen(p.packStart):'—'}</td><td class="num"><b>${p.packedAt?fmtWhen(p.packedAt):'—'}</b>${p.noRate?' <span class="muted" style="font-size:11px">(no repack rate)</span>':''}</td><td class="num" style="font-size:12px">${p.x.o.due?fmtDay(parseDate(p.x.o.due)):'<span class="muted">—</span>'}</td><td>${p.late?'<span class="chip bad">Late</span>':p.x.o.due?'<span class="chip ok">On time</span>':''}</td></tr>`).join('');
   return `
   <section class="kpis">
     <div class="kpi"><span class="l">Kg to produce</span><span class="v num">${n0(C.totalShort)}</span><span class="s">${n1(hours)} line hours · rest of ${n0(C.totalReq)} kg from stock</span></div>
     <div class="kpi"><span class="l">Avg wait before packing</span><span class="v num">${n1(C.finalWait.avg)} h</span><span class="s">${C.jit?`vs ${n1(C.asapWait.avg)} h if every line started now`:'Switch to Just in time on Schedule to cut this'}</span></div>
-    <div class="kpi"><span class="l">All biscuits made by</span><span class="v">${lastLine?fmtWhen(C.toTime(lastLine.finish)).split(',')[0]:'Now'}</span><span class="s">${lastLine?lastLine.L.name+' finishes last':'Stock covers every order'}</span></div>
+    <div class="kpi"><span class="l">All orders packed by</span><span class="v">${lastPack?fmtWhen(lastPack).split(',')[0]:'—'}</span><span class="s">${lastPack?fmtWhen(lastPack).split(', ')[1]+' · biscuits all made '+(lastLine?fmtWhen(C.toTime(lastLine.finish)).split(',')[0]:'now'):'No outstanding orders'}</span></div>
     <div class="kpi"><span class="l">Cases packable now</span><span class="v num">${n0(packNow)}</span><span class="s">of ${n0(totalRem)} cases outstanding</span></div>
   </section>
   <div class="two">
@@ -510,7 +521,11 @@ function vOverview(C){
       ${lineArr.map(l=>{const r=l.runs[0];return `<div style="display:flex;gap:8px;align-items:baseline;justify-content:space-between;border-top:1px solid var(--rule-2);padding-top:6px"><span class="lname" style="font-size:14px">${lineDot(l.L.id)}${l.L.name}</span><span style="flex:1">${r?esc(r.b.name):'<span class="muted">Nothing needed</span>'}</span><span class="num muted">${r?fmtWhen(C.toTime(r.start)):''}</span></div>`}).join('')}
       </div>
     </section>
-  </div>`;
+  </div>
+  <section style="display:grid;gap:8px"><h2>When each order will be packed</h2>
+  <div class="tablebox"><table><thead><tr><th>Product</th><th class="r">Cases to go</th><th class="r">From stock</th><th>Biscuits ready</th><th>Repacking starts</th><th>Packed by</th><th>Due</th><th></th></tr></thead>
+  <tbody>${delRows||'<tr class="dim"><td colspan="8">No outstanding orders.</td></tr>'}</tbody></table></div>
+  <div class="legend"><span>Packed by = biscuits made (production plan) + repacking at the rates on Data notes → Repacking, one order after another, on working days at the repacking hours per day set on Schedule. Add a due date on Orders to see On time / Late.</span></div></section>`;
 }
 
 function buildRecs(C){
@@ -540,7 +555,7 @@ function buildRecs(C){
   const waiting=C.plist.filter(p=>p.I&&p.I.packNow<p.I.rem&&!p.late).sort((a,b)=>(a.ready?.abs??0)-(b.ready?.abs??0)).slice(0,4);
   waiting.forEach(p=>{
     const bl=p.blockers.slice(0,3).map(b=>`${esc(C.bis[b].name)} <span class="muted">(${LBY[C.bis[b].line].name})</span>`).join(', ');
-    R.push({k:'info',tag:'Waiting',html:`<b>${esc(p.x.p.name)}</b>: ${n0(p.I.rem-p.I.packNow)} cs waiting on ${bl}${p.blockers.length>3?` +${p.blockers.length-3} more`:''}. Ready to pack ${fmtWhen(p.ready)}.`});
+    R.push({k:'info',tag:'Waiting',html:`<b>${esc(p.x.p.name)}</b>: ${n0(p.I.rem-p.I.packNow)} cs waiting on ${bl}${p.blockers.length>3?` +${p.blockers.length-3} more`:''}. Biscuits ready ${fmtWhen(p.ready)}, <b>packed by ${p.packedAt?fmtWhen(p.packedAt):'—'}</b>.`});
   });
   const idle=LINES.filter(l=>C.lines[l.id].hours===0);
   if(idle.length&&L.length){
@@ -557,8 +572,8 @@ function vOrders(C){
   ['Sweet','Savoury'].forEach(cat=>{
     const items=C.plist.filter(p=>p.x.p.cat===cat&&(!S.onlyActive||num(p.x.o.cases)>0));
     const kg=items.reduce((s,p)=>s+(p.I?p.I.rem*p.x.p.caseKg:0),0);
-    rows.push(`<tr class="group"><td colspan="10">${cat} assortments <span class="muted" style="font:500 12px var(--mono);text-transform:none;letter-spacing:0">· ${n0(kg)} kg to go</span></td></tr>`);
-    if(!items.length) rows.push(`<tr class="dim"><td colspan="10">No ${cat.toLowerCase()} orders. Untick “Only products with orders” to add one.</td></tr>`);
+    rows.push(`<tr class="group"><td colspan="11">${cat} assortments <span class="muted" style="font:500 12px var(--mono);text-transform:none;letter-spacing:0">· ${n0(kg)} kg to go</span></td></tr>`);
+    if(!items.length) rows.push(`<tr class="dim"><td colspan="11">No ${cat.toLowerCase()} orders. Untick “Only products with orders” to add one.</td></tr>`);
     items.forEach(p=>{
       const id=p.x.p.id, o=p.x.o, I=p.I;
       const mixTitle=Object.entries(p.x.p.mix).sort((a,b)=>b[1]-a[1]).map(([b,f])=>`${BIS[b].name} ${(f*100).toFixed(1)}% (${LBY[S.lineOf[b]].name})`).join('\n');
@@ -572,6 +587,7 @@ function vOrders(C){
         <td class="r num">${I?n0(I.packNow):'—'}</td>
         <td class="num" style="font-size:12px">${I?(I.packNow>=I.rem?'Now':fmtWhen(p.ready)):'—'}</td>
         <td class="r num">${p.repackH!=null&&I?n1(p.repackH):'—'}</td>
+        <td class="num" style="font-size:12px">${I&&p.packedAt?`<b>${fmtWhen(p.packedAt)}</b>${p.noRate?'<div class="muted" style="font-size:11px">no repack rate</div>':''}`:'—'}</td>
         <td>${statusChip(p)}</td></tr>`);
     });
   });
@@ -583,9 +599,9 @@ function vOrders(C){
       ${confirmBtn('clear','Clear all orders','Set every order to 0?')}
     </div></section>
   <div class="tablebox"><table>
-    <thead><tr><th>Product</th><th class="r">Cases required</th><th class="r">Packed (daily entry)</th><th>Priority</th><th>Due</th><th class="r">Kg to go</th><th class="r">Pack now</th><th>Ready to pack</th><th class="r">Repack h</th><th>Status</th></tr></thead>
+    <thead><tr><th>Product</th><th class="r">Cases required</th><th class="r">Packed (daily entry)</th><th>Priority</th><th>Due</th><th class="r">Kg to go</th><th class="r">Pack now</th><th>Biscuits ready</th><th class="r">Repack h</th><th>Packed by</th><th>Status</th></tr></thead>
     <tbody>${rows.join('')}</tbody>
-    <tfoot><tr><td><b>Total outstanding</b></td><td colspan="4" class="num">${n0(tot)} cases</td><td class="r num"><b>${n0(C.totalReq)}</b></td><td colspan="4"></td></tr></tfoot>
+    <tfoot><tr><td><b>Total outstanding</b></td><td colspan="4" class="num">${n0(tot)} cases</td><td class="r num"><b>${n0(C.totalReq)}</b></td><td colspan="5"></td></tr></tfoot>
   </table></div>
   <div class="legend"><span>${lineDot('FGC2')} FGC 2</span><span>${lineDot('POLIN')} Polin</span><span>${lineDot('WAFER')} Wafer</span><span>${lineDot('FGC1')} FGC 1</span><span>${lineDot('LASER')} Laser</span><span>Hover a product name to see its biscuit mix.</span></div>`;
 }
@@ -679,6 +695,7 @@ function vSchedule(C){
       <div class="field"><b>Timing</b><div class="days mode">${[['jit','Just in time'],['asap','As soon as possible']].map(([k,t])=>`<button data-mode="${k}" aria-pressed="${(st.mode||'jit')===k}">${t}</button>`).join('')}</div></div>
       <div class="field"><b>Run order on each line</b><div class="days mode">${[['stock','Lowest stock first'],['urgent','Most urgent order first']].map(([k,t])=>`<button data-ro="${k}" aria-pressed="${(st.runOrder||'stock')===k}">${t}</button>`).join('')}</div></div>
       <label class="field"><b>Ready before packing (h)</b><input type="text" inputmode="decimal" autocomplete="off" min="0" step="1" id="set-buf" data-s="buffer" value="${num(st.buffer)}" style="width:70px"></label>
+      <label class="field"><b>Repacking hours / day</b><input type="text" inputmode="decimal" autocomplete="off" id="set-rhpd" data-s="repackHpd" value="${num(st.repackHpd)||24}" style="width:70px"></label>
       <label class="field"><b>Changeover (h)</b><input type="text" inputmode="decimal" autocomplete="off" min="0" step="0.25" id="set-co" data-s="changeover" value="${num(st.changeover)}" style="width:70px"></label>
       <div class="field"><b>Hours per day, by line</b><div class="hpd">${LINES.map(L=>`<label>${lineDot(L.id)}${L.name}<input type="text" inputmode="decimal" autocomplete="off" min="0" max="24" step="1" id="hpd-${L.id}" data-h="${L.id}" value="${num(st.hpd[L.id])}"></label>`).join('')}</div></div>
     </div>
@@ -808,7 +825,7 @@ function casesTable(C){
   const list=C.plist.filter(p=>p.I);
   if(!list.length) return '';
   const tot=list.reduce((s,p)=>s+p.I.rem,0), now=list.reduce((s,p)=>s+p.I.packNow,0);
-  let last=null; list.forEach(p=>{if(p.ready&&(!last||p.ready.abs>last.abs))last=p.ready});
+  let last=null, lastP=null; list.forEach(p=>{if(p.ready&&(!last||p.ready.abs>last.abs))last=p.ready;if(p.packedAt&&(!lastP||p.packedAt.abs>lastP.abs))lastP=p.packedAt});
   const rows=list.map(p=>{
     const I=p.I, pct=I.rem?I.packNow/I.rem:1, lim=I.limiter&&I.packNow<I.rem?C.bis[I.limiter]:null;
     const shortB=Object.keys(I.unmet);
@@ -820,13 +837,14 @@ function casesTable(C){
       <td>${lim?`${lineDot(lim.line)} ${esc(lim.name)}`:pct>=1?'<span class="chip ok">Fully covered</span>':''}${shortB.length>1?` <span class="muted" style="font-size:12px">+${shortB.length-1} more short</span>`:''}</td>
       <td class="r num"><b>${n0(I.rem)}</b></td>
       <td class="num" style="font-size:12px">${pct>=1?'Now':fmtWhen(p.ready)}</td>
+      <td class="num" style="font-size:12px"><b>${p.packedAt?fmtWhen(p.packedAt):'—'}</b></td>
       <td>${p.late?'<span class="chip bad">Late</span>':''}</td></tr>`}).join('');
   return `<section style="display:grid;gap:8px">
   <div class="toolbar"><div class="grp"><h2>Cases you can make</h2><span class="muted">Now from stock (shared out by due date, then priority), and once production is complete.</span></div></div>
   <div class="tablebox"><table>
-   <thead><tr><th>Product</th><th class="r">Cases outstanding</th><th class="r">Can make now</th><th style="min-width:120px">From stock</th><th class="r">Still needed</th><th>Held back by</th><th class="r">After production</th><th>All cases ready</th><th></th></tr></thead>
+   <thead><tr><th>Product</th><th class="r">Cases outstanding</th><th class="r">Can make now</th><th style="min-width:120px">From stock</th><th class="r">Still needed</th><th>Held back by</th><th class="r">After production</th><th>Biscuits ready</th><th>Packed by</th><th></th></tr></thead>
    <tbody>${rows}</tbody>
-   <tfoot><tr><td><b>Total</b></td><td class="r num"><b>${n0(tot)}</b></td><td class="r num"><b>${n0(now)}</b></td><td class="num muted">${tot?Math.round(now/tot*100):0}%</td><td class="r num">${n0(tot-now)}</td><td></td><td class="r num"><b>${n0(tot)}</b></td><td class="num" style="font-size:12px">${last?fmtWhen(last):'Now'}</td><td></td></tr></tfoot>
+   <tfoot><tr><td><b>Total</b></td><td class="r num"><b>${n0(tot)}</b></td><td class="r num"><b>${n0(now)}</b></td><td class="num muted">${tot?Math.round(now/tot*100):0}%</td><td class="r num">${n0(tot-now)}</td><td></td><td class="r num"><b>${n0(tot)}</b></td><td class="num" style="font-size:12px">${last?fmtWhen(last):'Now'}</td><td class="num" style="font-size:12px"><b>${lastP?fmtWhen(lastP):'—'}</b></td><td></td></tr></tfoot>
   </table></div></section>`;
 }
 function stockPos(c){
@@ -959,7 +977,7 @@ $main.addEventListener('input',e=>{
   else if(t.id==='entry-date'){if(t.value){entryDate=t.value;clearTimeout(rt);rt=setTimeout(render,150)}}
   else if(t.dataset.rt){S.rates[t.dataset.rt]=num(t.value);changed()}
   else if(t.dataset.h){S.settings.hpd[t.dataset.h]=Math.min(24,num(t.value));changed()}
-  else if(t.dataset.s){S.settings[t.dataset.s]=t.dataset.s==='crates'?num(String(t.value).replace(/[^0-9.]/g,'')):(t.dataset.s==='changeover'||t.dataset.s==='buffer'||t.dataset.s==='overPct')?num(t.value):(t.value||todayISO());changed()}
+  else if(t.dataset.s){S.settings[t.dataset.s]=t.dataset.s==='crates'?num(String(t.value).replace(/[^0-9.]/g,'')):(t.dataset.s==='changeover'||t.dataset.s==='buffer'||t.dataset.s==='overPct'||t.dataset.s==='repackHpd')?num(t.value):(t.value||todayISO());changed()}
 });
 $main.addEventListener('change',e=>{
   const t=e.target;
