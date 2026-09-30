@@ -228,6 +228,7 @@ tr.pos-short .pb-s{background:var(--bad);opacity:.8}tr.pos-over .pb-s{background
     <div class="ng">Plan</div>
     <button data-t="overview" aria-selected="true"><span class="ic">◧</span>Overview</button>
     <button data-t="plan" aria-selected="false"><span class="ic">≡</span>Production plan</button>
+    <button data-t="adjust" aria-selected="false"><span class="ic">✎</span>Adjust plan</button>
     <button data-t="schedule" aria-selected="false"><span class="ic">▭</span>Schedule</button>
     <button data-t="lines" aria-selected="false"><span class="ic">▤</span>Lines</button>
     <button data-t="stock" aria-selected="false"><span class="ic">▥</span>Stock by line</button>
@@ -272,7 +273,7 @@ function defaults(){
   SEED.biscuits.forEach(b=>{stock[b.id]=b.stock;rates[b.id]=b.kgph;lineOf[b.id]=b.line});
   const ref={repack:{},crate:{},pieceG:{},packs:JSON.parse(JSON.stringify(PACKS0))};
   SEED.products.forEach(p=>ref.repack[p.id]=p.repack||0);SEED.biscuits.forEach(b=>{ref.crate[b.id]=b.crate;ref.pieceG[b.id]=0});
-  return {orders,opening:{date:todayISO(),stock},rates,lineOf,log:{},ref,settings:{start:todayISO(),workDays:[1,2,3,4,5],lineDays:{FGC2:[1,2,3,4,5],POLIN:[0,1,2,3,4,5,6],WAFER:[1,2,3,4,5],FGC1:[1,2,3,4,5],LASER:[1,2,3,4,5,6],REPACK:[1,2,3,4,5]},hpd:{FGC2:24,POLIN:24,WAFER:24,FGC1:24,LASER:24},changeover:0,mode:'jit',buffer:2,runOrder:'stock',overPct:150,crates:0,repackHpd:24,eff:{FGC2:100,POLIN:100,WAFER:100,FGC1:100,LASER:100},shiftMax:{FGC2:{d:2,n:1},POLIN:{d:2,n:1},LASER:{d:2,n:1},WAFER:{d:0,n:0},FGC1:{d:0,n:0}}},onlyActive:true};
+  return {orders,opening:{date:todayISO(),stock},rates,lineOf,log:{},ref,manual:{order:{},pin:{},kg:{},skip:{}},settings:{start:todayISO(),workDays:[1,2,3,4,5],lineDays:{FGC2:[1,2,3,4,5],POLIN:[0,1,2,3,4,5,6],WAFER:[1,2,3,4,5],FGC1:[1,2,3,4,5],LASER:[1,2,3,4,5,6],REPACK:[1,2,3,4,5]},hpd:{FGC2:24,POLIN:24,WAFER:24,FGC1:24,LASER:24},changeover:0,mode:'jit',buffer:2,runOrder:'stock',overPct:150,crates:0,repackHpd:24,eff:{FGC2:100,POLIN:100,WAFER:100,FGC1:100,LASER:100},shiftMax:{FGC2:{d:2,n:1},POLIN:{d:2,n:1},LASER:{d:2,n:1},WAFER:{d:0,n:0},FGC1:{d:0,n:0}}},onlyActive:true};
 }
 function merge(base,src){
   const s=JSON.parse(JSON.stringify(base));
@@ -281,6 +282,7 @@ function merge(base,src){
   const op=src.opening||(src.stock?{date:(src.settings&&src.settings.start)||todayISO(),stock:src.stock}:null);
   if(op){ if(op.date) s.opening.date=op.date; if(op.stock) for(const id in op.stock) if(id in s.opening.stock) s.opening.stock[id]=op.stock[id]; }
   if(src.log) s.log=JSON.parse(JSON.stringify(src.log));
+  if(src.manual){const m=src.manual;s.manual={order:JSON.parse(JSON.stringify(m.order||{})),pin:Object.assign({},m.pin||{}),kg:Object.assign({},m.kg||{}),skip:Object.assign({},m.skip||{})}}
   if(src.ref) for(const k of ['repack','crate','pieceG','packs']) if(src.ref[k]) for(const id in src.ref[k]) if(id in s.ref[k]) s.ref[k][id]=(k==='packs'?Object.assign({},s.ref[k][id],src.ref[k][id]):src.ref[k][id]);
   if(src.settings){Object.assign(s.settings,src.settings);s.settings.hpd=Object.assign({},base.settings.hpd,src.settings.hpd||{});s.settings.lineDays=Object.assign({},base.settings.lineDays,src.settings.lineDays||{});s.settings.shiftMax=Object.assign({},base.settings.shiftMax,src.settings.shiftMax||{});s.settings.eff=Object.assign({},base.settings.eff,src.settings.eff||{})}
   if('onlyActive' in src) s.onlyActive=src.onlyActive;
@@ -288,7 +290,7 @@ function merge(base,src){
 }
 let S = defaults();
 let tab='overview'; let entryDate=todayISO(), entryView='day', entryAll=false;
-try{const h=location.hash.slice(1);if(['overview','plan','orders','entry','schedule','lines','stock','crates','notes','users','account'].includes(h))tab=h}catch(e){}
+try{const h=location.hash.slice(1);if(['overview','plan','adjust','orders','entry','schedule','lines','stock','crates','notes','users','account'].includes(h))tab=h}catch(e){}
 
 const n0=v=>Math.round(v).toLocaleString('en-ZA').replace(/ /g,' ');
 const n1=v=>(Math.round(v*10)/10).toLocaleString('en-ZA',{minimumFractionDigits:1,maximumFractionDigits:1}).replace(/ /g,' ');
@@ -355,8 +357,14 @@ function compute(){
   const bis={};
   SEED.biscuits.forEach(b=>{
     const stock=onHand[b.id], r=req[b.id], short=Math.max(0,r-stock), rate=(num(S.rates[b.id])||1)*Math.max(0.05,(num((st.eff||{})[lineOf[b.id]])||100)/100);
-    bis[b.id]={id:b.id,name:b.name,line:lineOf[b.id],req:r,stock,short,hours:short/rate,crates:short/(num(S.ref.crate[b.id])||b.crate||1),rate,crate:num(S.ref.crate[b.id])||b.crate};
+    const M=S.manual||{}; let plan=short, man=false;
+    if(M.skip&&M.skip[b.id]){plan=0;man=true} else if(M.kg&&M.kg[b.id]!=null&&M.kg[b.id]!==''){plan=Math.max(0,num(M.kg[b.id]));man=true}
+    bis[b.id]={id:b.id,name:b.name,line:lineOf[b.id],req:r,stock,short:plan,autoShort:short,manual:man,skipped:!!(M.skip&&M.skip[b.id]),hours:plan/rate,crates:plan/(num(S.ref.crate[b.id])||b.crate||1),rate,crate:num(S.ref.crate[b.id])||b.crate};
   });
+  // a biscuit planned below what the orders need leaves the least urgent orders uncovered
+  const UNC={}, uncBy={};
+  Object.values(bis).forEach(b=>{let def=b.autoShort-b.short; if(def<=0.5) return;
+    for(let i=order.length-1;i>=0&&def>0.5;i--){const x=order[i],u=info[x.p.id].unmet[b.id]||0; if(u>0.01){UNC[x.p.id]=true;(uncBy[x.p.id]=uncBy[x.p.id]||[]).push(b.id);def-=u}}});
   // rank of each biscuit = position of most urgent product that still needs it
   const rank={}; order.forEach((x,idx)=>{for(const b in info[x.p.id].unmet) if(!(b in rank)) rank[b]=idx});
   // ---------- scheduling ----------
@@ -387,8 +395,8 @@ function compute(){
     const sStart=k=>Math.floor(k/2)*H+(k%2?SL:0);
     const cap=k=>{const m=k%2?mn:md; return m>0?m:1e9};
     const cnt={}; let cur=0;
-    runs.forEach((r,i)=>{ const h=r.ew-r.sw; let s0=Math.max(r.sw,i?cur+co:0,w0);
-      if(on){ const lo=Math.max(i?cur+co:0,w0); let g=0; while(g++<4000){ const k=sIdx(s0);
+    runs.forEach((r,i)=>{ const h=r.ew-r.sw; let s0=Math.max(r.sw,i?cur+co:0,w0,r.minW||0);
+      if(on){ const lo=Math.max(i?cur+co:0,w0,r.minW||0); let g=0; while(g++<4000){ const k=sIdx(s0);
           if((cnt[k]||0)>=cap(k)){ let nk=k+1; if(nk%2&&H<=SL) nk++; s0=Math.max(s0,sStart(nk)); continue }
           if(k%2&&mn===1&&s0>sStart(k)+1e-6){ if(sStart(k)>=lo-1e-9){ s0=sStart(k); break } s0=sStart(k+1); continue }
           break } }
@@ -396,16 +404,20 @@ function compute(){
       if(on) for(let k=sIdx(s0);k<=sIdx(r.ew-1e-9);k++) cnt[k]=(cnt[k]||0)+1;
       cur=r.ew; });
   }
-  const lines={}; const cal={};
+  const lines={}; const cal={}; const manualLine={};
   // pass 1: as soon as possible, in urgency order
   LINES.forEach(L=>{
     const hpd=Math.min(24,num(st.hpd[L.id])); const c=mkCal(hpd,daysOf(L.id)); cal[L.id]=c;
     const tasks=Object.values(bis).filter(b=>b.line===L.id&&b.short>0.5).sort(byStock?((a,b)=>(a.cover-b.cover)||((rank[a.id]??1e9)-(rank[b.id]??1e9))):((a,b)=>((rank[a.id]??1e9)-(rank[b.id]??1e9))||(a.hours-b.hours)));
-    const runs=tasks.map(b=>({b,sw:0,ew:b.hours})); place(runs,hpd,L.id,c.absToWork(T0));
+    const MO=(S.manual&&S.manual.order&&S.manual.order[L.id])||null;
+    if(MO){const ix=id=>{const k=MO.indexOf(id);return k<0?1e6:k};tasks.sort((a,b)=>ix(a.id)-ix(b.id))}
+    const pinW=id=>{const pv=S.manual&&S.manual.pin&&S.manual.pin[id];if(!pv)return 0;const [d,sh]=String(pv).split('|');const di=Math.round((parseDate(d)-start)/864e5);return di<0?0:c.absToWork(di*24+(sh==='n'?12:0))};
+    const runs=tasks.map(b=>({b,sw:0,ew:b.hours,minW:pinW(b.id)})); place(runs,hpd,L.id,c.absToWork(T0));
+    manualLine[L.id]=!!MO||runs.some(r=>r.minW>0);
     lines[L.id]={L,hpd,tasks,runs,hours:tasks.reduce((s,b)=>s+b.hours,0),kg:tasks.reduce((s,b)=>s+b.short,0),crates:tasks.reduce((s,b)=>s+b.crates,0),allBis:Object.values(bis).filter(b=>b.line===L.id)};
   });
   const endAbs=()=>{const e={};LINES.forEach(L=>lines[L.id].runs.forEach(r=>e[r.b.id]=cal[L.id].toAbs(r.ew,false)));return e};
-  const readyOf=e=>{const R={};order.forEach(x=>{let m=null;for(const b in info[x.p.id].unmet){const v=e[b];if(v!=null&&(m==null||v>m))m=v}if(m!=null)R[x.p.id]=m});return R};
+  const readyOf=e=>{const R={};order.forEach(x=>{if(UNC[x.p.id])return;let m=null;for(const b in info[x.p.id].unmet){const v=e[b];if(v!=null&&(m==null||v>m))m=v}if(m!=null)R[x.p.id]=m});return R};
   const needBy=R=>{const N={};order.forEach(x=>{const r=R[x.p.id];if(r==null)return;for(const b in info[x.p.id].unmet){if(N[b]==null||r<N[b])N[b]=r}});return N};
   const waitStats=(e,N)=>{let kgh=0,kg=0;const w={};for(const b in e){const v=Math.max(0,(N[b]??e[b])-e[b]);w[b]=v;kgh+=v*bis[b].short;kg+=bis[b].short}return {w,avg:kg?kgh/kg:0}};
   const e1=endAbs(), R1=readyOf(e1), N1=needBy(R1), asapWait=waitStats(e1,N1);
@@ -415,7 +427,7 @@ function compute(){
     LINES.forEach(L=>{
       const l=lines[L.id], c=cal[L.id]; if(!l.runs.length||c.hpd<=0) return;
       const p1=new Map(l.runs.map(r=>[r,[r.sw,r.ew]])); const end1=Math.max(...[...p1.values()].map(v=>v[1]));
-      const byNeed=byStock?l.runs.slice().reverse():l.runs.slice().sort((a,b)=>(N1[b.b.id]??1e12)-(N1[a.b.id]??1e12)||((rank[b.b.id]??0)-(rank[a.b.id]??0)));
+      const byNeed=(byStock||manualLine[L.id])?l.runs.slice().reverse():l.runs.slice().sort((a,b)=>(N1[b.b.id]??1e12)-(N1[a.b.id]??1e12)||((rank[b.b.id]??0)-(rank[a.b.id]??0)));
       let lim=Infinity;
       byNeed.forEach(r=>{ const due=N1[r.b.id]; let ew=due!=null?c.absToWork(Math.max(0,due-buf)):r.ew; if(lim!==Infinity) ew=Math.min(ew,lim-co); r.ew=ew; r.sw=ew-r.b.hours; lim=r.sw; });
       l.runs.sort((a,b)=>a.sw-b.sw);
@@ -450,7 +462,7 @@ function compute(){
     let late=false; if(x.o.due&&ready){const due=parseDate(x.o.due);late=ready.date>due}
     const lineSet=[...new Set(Object.keys(x.p.mix).map(b=>lineOf[b]))];
     const blockers=Object.keys(I.unmet).sort((a,b)=>(eF[b]??0)-(eF[a]??0));
-    return {x,I,ready,late,lineSet,blockers,repackH:num(S.ref.repack[x.p.id])?x.rem/num(S.ref.repack[x.p.id]):null};
+    return {x,I,ready,late,lineSet,blockers,uncovered:!!UNC[x.p.id],uncBy:uncBy[x.p.id]||[],repackH:num(S.ref.repack[x.p.id])?x.rem/num(S.ref.repack[x.p.id]):null};
   });
   // ---------- crates ----------
   const ck=b=>num(S.ref.crate[b])||(BIS[b]&&BIS[b].crate)||10;
@@ -461,7 +473,7 @@ function compute(){
   LINES.forEach(L=>lines[L.id].segs.forEach(sg=>{if(sg.kind!=='run')return;const kg=(sg.to-sg.from)*sg.b.rate;const c=kg/ck(sg.b.id);spread(fillH,sg.day*24+sg.from,sg.day*24+sg.to,c);fillBis[sg.b.id]=(fillBis[sg.b.id]||0)+c}));
   const jobs=[]; order.forEach((x,i)=>{const I=info[x.p.id];const cpc=Object.entries(I.per).reduce((a,[b,kg])=>a+kg/ck(b),0);
     if(I.packNow>0) jobs.push({x,i,cases:I.packNow,avail:0,cpc});
-    if(I.rem>I.packNow) jobs.push({x,i,cases:I.rem-I.packNow,avail:RF[x.p.id]??0,cpc});});
+    if(I.rem>I.packNow&&!UNC[x.p.id]) jobs.push({x,i,cases:I.rem-I.packNow,avail:RF[x.p.id]??0,cpc});});
   jobs.sort((a,b)=>a.avail-b.avail||a.i-b.i);
   const rc=mkCal(Math.min(24,num(st.repackHpd)||24),daysOf('REPACK'));
   let rtW=rc.absToWork(T0), rt=0; const repJobs=[], packEnd={}, packStart={}, noRate={};
@@ -482,7 +494,7 @@ function compute(){
     for(let h=d*24;h<d*24+24;h++){const fh=fillH[h]||0,eh=emptyH[h]||0;f+=fh;e+=eh;cs+=casesH[h]||0;cur=Math.max(0,cur+fh-eh);if(cur>pk)pk=cur}
     crDays.push({day:d,start:s0,fill:f,empty:e,end:cur,cases:cs,peakIn:pk});if(pk>peak.v)peak={v:pk,day:d}}
   const crates={total,inUseNow,crInUse,fillBis,emptyBis,days:crDays,peak,repJobs,filled:Object.values(fillH).reduce((a,v)=>a+v,0),emptied:Object.values(emptyH).reduce((a,v)=>a+v,0),repEnd:rt};
-  return {T0,crates,LG,order,info,bis,lines,plist,start,horizon,toTime,jit,asapWait,finalWait,totalShort:Object.values(bis).reduce((s,b)=>s+b.short,0),totalReq:Object.values(req).reduce((s,v)=>s+v,0)};
+  return {UNC,manualLine,T0,crates,LG,order,info,bis,lines,plist,start,horizon,toTime,jit,asapWait,finalWait,totalShort:Object.values(bis).reduce((s,b)=>s+b.short,0),totalReq:Object.values(req).reduce((s,v)=>s+v,0)};
 }
 
 /* ---------------- rendering ---------------- */
@@ -491,6 +503,7 @@ function lineDot(id,title){const L=LBY[id];return `<i class="sw" style="backgrou
 function statusChip(pl){
   if(!pl.I) return '<span class="chip idle">No order</span>';
   if(pl.I.packNow>=pl.I.rem) return '<span class="chip ok">Pack now from stock</span>';
+  if(pl.uncovered) return '<span class="chip bad">Not covered by plan</span>';
   if(pl.late) return '<span class="chip bad">Late for due date</span>';
   if(pl.I.packNow>=pl.I.rem) return '<span class="chip ok">Pack now from stock</span>';
   if(pl.I.packNow>0) return '<span class="chip warn">Part from stock</span>';
@@ -501,12 +514,12 @@ function render(){
   const C=compute();
   document.querySelectorAll('#tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.t===tab?'true':'false'));
   const f=snapshotFocus();
-  $main.innerHTML = ({overview:vOverview,plan:vPlan,orders:vOrders,entry:vEntry,schedule:vSchedule,lines:vLines,stock:vStock,crates:vCrates,notes:vNotes,users:vUsers,account:vAccount})[tab](C);
+  $main.innerHTML = ({overview:vOverview,plan:vPlan,adjust:vAdjust,orders:vOrders,entry:vEntry,schedule:vSchedule,lines:vLines,stock:vStock,crates:vCrates,notes:vNotes,users:vUsers,account:vAccount})[tab](C);
   const rem=C.plist.reduce((a,p)=>a+(p.I?p.I.rem:0),0), now=C.plist.reduce((a,p)=>a+(p.I?p.I.packNow:0),0);
   const oh=Object.values(C.LG.onHand).reduce((a,v)=>a+Math.max(0,v),0);
   let fin=null;LINES.forEach(L=>{const f=C.lines[L.id].finish;if(f&&(!fin||f.day*24+f.hour>fin.day*24+fin.hour))fin=f});
   const lastDay=C.LG.days.length?C.LG.days[C.LG.days.length-1].date:null;
-  document.getElementById('sidekpi').innerHTML=`<div><span>Cases outstanding</span><b>${n0(rem)}</b></div><div><span>Packable now</span><b>${n0(now)}</b></div><div><span>Kg to produce</span><b>${n0(C.totalShort)}</b></div><div><span>Stock on hand</span><b>${n0(oh)} kg</b></div><div><span>Crates free</span><b>${C.crates.total?n0(C.crates.total-C.crates.inUseNow):'—'}</b></div><div><span>All made by</span><b>${fin?fmtWhen(C.toTime(fin)).split(',')[0]:'—'}</b></div><div><span>All packed by</span><b>${(()=>{let m=null;C.plist.forEach(p=>{if(p.packedAt&&(!m||p.packedAt.abs>m.abs))m=p.packedAt});return m?fmtWhen(m).split(',')[0]:'—'})()}</b></div><div><span>Last entry</span><b>${lastDay?fmtDay(parseDate(lastDay)):'None yet'}</b></div>`;
+  document.getElementById('sidekpi').innerHTML=`<div><span>Cases outstanding</span><b>${n0(rem)}</b></div><div><span>Packable now</span><b>${n0(now)}</b></div><div><span>Kg to produce</span><b>${n0(C.totalShort)}</b></div><div><span>Stock on hand</span><b>${n0(oh)} kg</b></div><div><span>Crates free</span><b>${C.crates.total?n0(C.crates.total-C.crates.inUseNow):'—'}</b></div><div><span>All made by</span><b>${fin?fmtWhen(C.toTime(fin)).split(',')[0]:'—'}</b></div><div><span>All packed by</span><b>${(()=>{let m=null;C.plist.forEach(p=>{if(p.packedAt&&(!m||p.packedAt.abs>m.abs))m=p.packedAt});return C.plist.some(p=>p.uncovered)?'Not all covered':m?fmtWhen(m).split(',')[0]:'—'})()}</b></div><div><span>Last entry</span><b>${lastDay?fmtDay(parseDate(lastDay)):'None yet'}</b></div>`;
   restoreFocus(f);
   applyPerms();
 }
@@ -574,6 +587,8 @@ function buildRecs(C){
   }
   {const ov=SEED.biscuits.map(b=>({b,c:C.bis[b.id],p:stockPos(C.bis[b.id])})).filter(x=>x.p.k==='over').sort((a,b)=>b.p.diff-a.p.diff).slice(0,4);
    if(ov.length) R.push({k:'info',tag:'Overstock',html:'Most surplus stock: '+ov.map(x=>`<b>${esc(x.b.name)}</b> +${n0(x.p.diff)} kg${x.c.req<=0.5?' (no current orders)':''}`).join(', ')+'. Don\'t make more of these; see the Stock by line tab.'});}
+  C.plist.filter(p=>p.uncovered).forEach(p=>R.push({k:'bad',tag:'Not covered',html:`<b>${esc(p.x.p.name)}</b>: the adjusted plan makes too little ${p.uncBy.map(b=>esc(BIS[b].name)).join(', ')}, so ${n0(p.I.rem-p.I.packNow)} cs can't be finished. Change it on Adjust plan.`}));
+  if(hasManual()) R.push({k:'info',tag:'Adjusted',html:'This plan includes manual adjustments. See <b>Adjust plan</b> for what changed and its effect on each order.'});
   const late=C.plist.filter(p=>p.late);
   late.forEach(p=>R.push({k:'bad',tag:'Late',html:`<b>${esc(p.x.p.name)}</b> is due ${fmtDay(parseDate(p.x.o.due))} but its last biscuit (${esc(C.bis[p.blockers[0]].name)}) is ready ${fmtWhen(p.ready)}. Raise its priority, add hours on ${[...new Set(p.blockers.map(b=>LBY[C.bis[b].line].name))].join(' / ')}, or agree a new date.`}));
   const waiting=C.plist.filter(p=>p.I&&p.I.packNow<p.I.rem&&!p.late).sort((a,b)=>(a.ready?.abs??0)-(b.ready?.abs??0)).slice(0,4);
@@ -683,6 +698,32 @@ function planTSV(C){
   const rows=planRows(C);
   const head=['Date / run #','Line','Biscuit','Start','Finish','Kg','Hours','Crates','Stock cover %','For product','Waits (h)'];
   return [head.join('\t')].concat(rows.map(r=>[r.day!=null?fmtDay(addDays(C.start,r.day)):r.rank,r.L.name,r.b.name,r.from,r.to,Math.round(r.kg),r.hours.toFixed(1),Math.round(r.crates),Math.round(Math.min(1,r.b.cover)*100),r.forP?r.forP.name:'',r.wait.toFixed(1)].join('\t'))).join('\n');
+}
+function hasManual(){const m=S.manual||{};return ['order','pin','kg','skip'].some(k=>m[k]&&Object.keys(m[k]).length)}
+function autoCompute(){const keep=S.manual;S.manual={order:{},pin:{},kg:{},skip:{}};let A;try{A=compute()}finally{S.manual=keep}return A}
+function vAdjust(C){
+  const A=hasManual()?autoCompute():C;
+  const impact=C.plist.filter(p=>p.I).map(p=>{const a=A.plist.find(q=>q.x.p.id===p.x.p.id);return {p,a:a&&a.packedAt,m:p.packedAt}}).filter(r=>r.p.uncovered||((r.a?r.a.abs:-1)!==(r.m?r.m.abs:-1)));
+  const impRows=impact.map(r=>{const d=r.a&&r.m?(r.m.abs-r.a.abs)/24:null;return `<tr${r.p.uncovered||(d>0.01)?' class="pos-short"':''}><td><b>${esc(r.p.x.p.name)}</b></td><td class="num" style="font-size:12px">${r.a?fmtWhen(r.a):'—'}</td><td class="num" style="font-size:12px"><b>${r.p.uncovered?'Not covered':r.m?fmtWhen(r.m):'—'}</b></td><td class="r num">${r.p.uncovered?`<span class="chip bad">short of ${r.p.uncBy.map(b=>esc(BIS[b].name)).join(', ')}</span>`:d==null?'':`<span style="color:var(${d>0?'--bad':'--ok'})">${d>0?'+':'−'}${n1(Math.abs(d))} days</span>`}</td></tr>`}).join('');
+  const slot=v=>{const [d,sh]=String(v||'').split('|');return {d:d||'',sh:sh||'d'}};
+  const lineTables=LINES.map(L=>{const l=C.lines[L.id];const skipped=Object.values(C.bis).filter(b=>b.line===L.id&&b.skipped);
+    if(!l.runs.length&&!skipped.length) return '';
+    const rowsH=l.runs.map((r,i)=>{const b=r.b,pv=slot(S.manual.pin&&S.manual.pin[b.id]),kgv=S.manual.kg&&S.manual.kg[b.id];const man=b.manual||!!(S.manual.pin&&S.manual.pin[b.id]);
+      return `<tr${man?' class="pos-over"':''}><td style="white-space:nowrap"><span class="rk">${i+1}</span> <button class="btn" data-mv="${b.id}" data-line="${L.id}" data-dir="-1" aria-label="Move up"${i===0?' disabled':''}>↑</button><button class="btn" data-mv="${b.id}" data-line="${L.id}" data-dir="1" aria-label="Move down"${i===l.runs.length-1?' disabled':''}>↓</button></td>
+      <td><b>${esc(b.name)}</b>${man?' <span class="chip over">adjusted</span>':''}</td>
+      <td class="r num">${n0(b.autoShort)}</td>
+      <td class="r"><input class="in" type="text" inputmode="decimal" autocomplete="off" id="mkg-${b.id}" data-mkg="${b.id}" value="${kgv!=null&&kgv!==''?kgv:''}" placeholder="${n0(b.autoShort)}" style="width:84px"></td>
+      <td style="white-space:nowrap"><input type="date" id="pind-${b.id}" data-pind="${b.id}" value="${pv.d}"> <select id="pins-${b.id}" data-pins="${b.id}"><option value="d"${pv.sh==='d'?' selected':''}>Day 06:00</option><option value="n"${pv.sh==='n'?' selected':''}>Night 18:00</option></select></td>
+      <td class="num" style="font-size:12px">${fmtWhen(C.toTime(r.start))}</td><td class="num" style="font-size:12px">${fmtWhen(C.toTime(r.end))}</td><td class="r num">${n1(b.hours)}</td>
+      <td><label class="tog"><input type="checkbox" id="skip-${b.id}" data-skip="${b.id}"> Skip</label></td></tr>`}).join('')
+      +skipped.map(b=>`<tr class="pos-short"><td></td><td><b>${esc(b.name)}</b> <span class="chip bad">skipped</span></td><td class="r num">${n0(b.autoShort)}</td><td></td><td></td><td colspan="3" class="muted" style="font-size:12px">Not in this plan</td><td><label class="tog"><input type="checkbox" id="skip-${b.id}" data-skip="${b.id}" checked> Skip</label></td></tr>`).join('');
+    return `<section style="display:grid;gap:6px"><div class="toolbar"><h3>${lineDot(L.id)} ${L.name}</h3>${(S.manual.order&&S.manual.order[L.id])?`<button class="btn" data-mreset="${L.id}">Automatic order for ${L.name}</button>`:''}</div>
+    <div class="tablebox"><table><thead><tr><th>Run</th><th>Biscuit</th><th class="r">Suggested kg</th><th class="r">Kg to make</th><th>Earliest start</th><th>Start</th><th>Finish</th><th class="r">Hours</th><th></th></tr></thead><tbody>${rowsH}</tbody></table></div></section>`}).join('');
+  return `<section class="toolbar"><div class="grp"><h2>Adjust plan</h2><span class="muted">The system's plan is the starting point. Change the run order, kg or earliest start where the floor can't follow it; every date recalculates and your changes are saved for everyone.</span></div>
+    <div class="grp">${hasManual()?confirmBtn('manreset','Back to automatic plan','Remove all adjustments?'):'<span class="chip ok">Automatic plan, no adjustments</span>'}</div></section>
+  ${hasManual()?`<section style="display:grid;gap:8px"><h2>Effect of your adjustments</h2>${impRows?`<div class="tablebox"><table class="compact"><thead><tr><th>Order</th><th>Automatic plan: packed by</th><th>With adjustments</th><th class="r">Change</th></tr></thead><tbody>${impRows}</tbody></table></div>`:'<div class="muted">No order dates change.</div>'}</section>`:''}
+  ${lineTables||'<div class="muted">Nothing to produce: stock covers every order.</div>'}
+  <div class="legend"><span><b>Kg to make</b>: leave empty for the suggestion; more builds stock, less leaves the least urgent orders short. <b>Earliest start</b>: the run won't start before that shift. ↑ ↓ fix the run order on that line. Blue rows are adjusted.</span></div>`;
 }
 let pending=null;
 function confirmBtn(key,label,q){
@@ -973,7 +1014,7 @@ function vNotes(C){
 
 function applyPerms(){
   if(PERM.canPlan&&PERM.canLog) return;
-  $main.querySelectorAll('input,select,button[data-mode],button[data-ro],button[data-wd],button[data-act="reset"],button[data-act="clear"]').forEach(el=>{
+  $main.querySelectorAll('input,select,button[data-mode],button[data-ro],button[data-wd],button[data-mv],button[data-mreset],button[data-act="manreset"],button[data-act="reset"],button[data-act="clear"]').forEach(el=>{
     if(['entry-date','entryAll','packSel'].includes(el.id)) return;
     const ok=(el.dataset.mk||el.dataset.pk)?PERM.canLog:PERM.canPlan;
     if(!ok){el.disabled=true;el.classList.add('locked-in')}
@@ -1001,6 +1042,8 @@ $main.addEventListener('input',e=>{
   else if(t.dataset.pg){S.ref.pieceG[t.dataset.pg]=num(t.value);changed()}
   else if(t.dataset.pn){S.ref.packs[t.dataset.pn].n=num(t.value);changed()}
   else if(t.dataset.pw){S.ref.packs[t.dataset.pw].g=num(t.value);changed()}
+  else if(t.dataset.mkg){const v=String(t.value).trim();S.manual.kg=S.manual.kg||{};if(v==='')delete S.manual.kg[t.dataset.mkg];else S.manual.kg[t.dataset.mkg]=num(v);changed()}
+  else if(t.dataset.pind){S.manual.pin=S.manual.pin||{};const id=t.dataset.pind;if(!t.value)delete S.manual.pin[id];else{const sh=(document.getElementById('pins-'+id)||{}).value||'d';S.manual.pin[id]=t.value+'|'+sh}changed()}
   else if(t.dataset.os){S.opening.stock[t.dataset.os]=num(t.value);changed()}
   else if(t.dataset.od){if(t.value){S.opening.date=t.value;changed()}}
   else if(t.id==='entry-date'){if(t.value){entryDate=t.value;clearTimeout(rt);rt=setTimeout(render,150)}}
@@ -1019,11 +1062,15 @@ $main.addEventListener('change',e=>{
   else if(t.id==='entryAll'){entryAll=t.checked;render()}
   else if(t.id==='packSel'){packSel=t.value;render()}
   else if(t.dataset.l){S.lineOf[t.dataset.l]=t.value;changed()}
+  else if(t.dataset.pins){S.manual.pin=S.manual.pin||{};const id=t.dataset.pins,d=(document.getElementById('pind-'+id)||{}).value;if(d){S.manual.pin[id]=d+'|'+t.value;changed()}}
+  else if(t.dataset.skip){S.manual.skip=S.manual.skip||{};if(t.checked)S.manual.skip[t.dataset.skip]=true;else delete S.manual.skip[t.dataset.skip];changed()}
   else if(t.tagName==='SELECT'&&t.dataset.o){S.orders[t.dataset.o].priority=t.value;changed()}
 });
 $main.addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;
   if(b.dataset.sf){stockFilter=b.dataset.sf;render();return}
+  if(b.dataset.mv){if(readOnly||!PERM.canPlan)return;const Lid=b.dataset.line,C0=compute();const ids=C0.lines[Lid].runs.map(r=>r.b.id);const i=ids.indexOf(b.dataset.mv),j=i+(+b.dataset.dir);if(i<0||j<0||j>=ids.length)return;[ids[i],ids[j]]=[ids[j],ids[i]];S.manual.order=S.manual.order||{};S.manual.order[Lid]=ids;changed();render();return}
+  if(b.dataset.mreset){if(readOnly||!PERM.canPlan)return;delete S.manual.order[b.dataset.mreset];changed();render();return}
   if(b.dataset.ev){entryView=b.dataset.ev;render();return}
   if(b.dataset.nv){notesView=b.dataset.nv;render();return}
   if(b.dataset.ed!=null){const k=+b.dataset.ed;entryDate=k===0?todayISO():(()=>{const x=addDays(parseDate(entryDate),k);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0')})();render();return}
@@ -1038,6 +1085,8 @@ $main.addEventListener('click',e=>{
     function fallback(){const ta=document.createElement('textarea');ta.value=t;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();let ok=false;try{ok=document.execCommand('copy')}catch(e){}ta.remove();done(ok?'Copied. Paste into Excel.':'Copy blocked. Select the table and copy it instead.')}
     return}
   if(a==='cancel'){pending=null;render();return}
+  if(a==='manreset'){if(readOnly||!PERM.canPlan)return;pending=a;render();return}
+  if(a==='manreset-yes'){S.manual={order:{},pin:{},kg:{},skip:{}};pending=null;changed();render();return}
   if(a==='clear'||a==='reset'){if(readOnly||!PERM.canPlan)return;pending=a;render();return}
   if(a==='clear-yes'){for(const id in S.orders){S.orders[id].cases=0}pending=null;S.onlyActive=false;changed();render();return}
   if(a==='reset-yes'){const keep=S.settings,lg=S.log;S=defaults();S.settings=keep;S.log=lg;pending=null;changed();render();return}
@@ -1046,7 +1095,7 @@ $main.addEventListener('click',e=>{
 /* ---------------- shared saving ---------------- */
 let ref=null, dirty=false, saving=false, again=false, st=null, readOnly=false;
 function setSync(s,txt){const el=document.getElementById('sync');el.dataset.s=s;document.getElementById('synctext').textContent=txt}
-function serial(){return {orders:S.orders,opening:S.opening,rates:S.rates,ref:S.ref,lineOf:S.lineOf,settings:S.settings,onlyActive:S.onlyActive,savedAt:new Date().toISOString()}}
+function serial(){return {orders:S.orders,opening:S.opening,rates:S.rates,manual:S.manual,ref:S.ref,lineOf:S.lineOf,settings:S.settings,onlyActive:S.onlyActive,savedAt:new Date().toISOString()}}
 function saveLocal(){try{localStorage.setItem('alp-plan',JSON.stringify(Object.assign(serial(),{log:S.log})))}catch(e){}}
 let logCol=null, logDirty=new Set(), logTimer=null, logSaving=false;
 function changedLog(d){logDirty.add(d);clearTimeout(rt);rt=setTimeout(render,450);if(!logCol){saveLocal();logDirty.clear();return}setSync('saving','Saving…');clearTimeout(logTimer);logTimer=setTimeout(saveLogs,900)}
