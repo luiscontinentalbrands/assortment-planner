@@ -694,7 +694,13 @@ function vPlan(C){
     ${PERM.canPlan&&!readOnly?`<button class="btn${editPlan?' primary':''}" data-act="editplan">${editPlan?'Done editing':'Edit plan'}</button>`:''}<button class="btn primary" data-act="copy">Copy for Excel</button><span class="muted" id="copymsg" style="font-size:12px">${copyMsg}</span></div></section>
   ${impactHTML(C)}
   ${ed?`<div class="ro-note" style="background:var(--accent-soft);color:var(--ink)">Editing the plan: ↑ ↓ change a line's run order · <b>Kg to make</b> empty = the suggestion, more builds stock, less leaves the least urgent orders short · <b>Earliest start</b> = don't start before that day / shift · <b>Skip</b> leaves the biscuit out. Changes are saved for everyone.</div>`:''}
-  ${(()=>{const sk=Object.values(C.bis).filter(b=>b.skipped);return sk.length?`<div class="ro-note" style="background:var(--bad-soft);color:var(--bad)">Skipped in this plan: ${sk.map(b=>`${lineDot(b.line)} ${esc(b.name)}${ed?` <label class="tog"><input type="checkbox" id="skip-${b.id}" data-skip="${b.id}" checked> Skip</label>`:''}`).join(' · ')}</div>`:''})()}
+  ${(()=>{const inPlan=new Set();LINES.forEach(L=>C.lines[L.id].runs.forEach(r=>inPlan.add(r.b.id)));
+    const out=Object.values(C.bis).filter(b=>b.req>0.5&&!inPlan.has(b.id));
+    if(!out.length) return '';
+    const why=b=>b.skipped?'<span class="chip bad">skipped</span>':(b.manual&&b.short<=0.5)?'<span class="chip bad">kg to make set to 0</span>':`<span class="chip ok">covered by stock</span> <span class="muted num" style="font-size:12px">${n0(b.stock)} kg on hand ≥ ${n0(b.req)} kg needed</span>`;
+    const fix=b=>(ed&&(b.skipped||b.manual))?` <button class="btn" data-mrestore="${b.id}">Put back in plan</button>`:'';
+    return `<section class="panel" style="gap:6px"><h3>Needed but not in the production plan</h3><div class="muted" style="font-size:12px">These biscuits are in the orders but have no run, and why.</div>
+    <div style="display:grid;gap:6px">${out.map(b=>`<div>${lineDot(b.line)} <b>${esc(b.name)}</b> — ${why(b)}${fix(b)}</div>`).join('')}</div></section>`})()}
   <div class="tablebox"><table>
     <thead><tr><th>${planView==='run'?'Run # · Line':'Line'}</th><th>Biscuit</th><th>Start</th><th>Finish</th><th class="r">Kg</th><th class="r">Hours</th><th class="r">Crates</th>${ed?'<th>Order</th><th class="r">Kg to make</th><th>Earliest start</th><th></th>':'<th class="r">Stock cover</th><th>For</th><th>Waits before packing</th>'}</tr></thead>
     <tbody>${body}</tbody>
@@ -1071,6 +1077,7 @@ $main.addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;
   if(b.dataset.sf){stockFilter=b.dataset.sf;render();return}
   if(b.dataset.mv){if(readOnly||!PERM.canPlan)return;const Lid=b.dataset.line,C0=compute();const ids=C0.lines[Lid].runs.map(r=>r.b.id);const i=ids.indexOf(b.dataset.mv),j=i+(+b.dataset.dir);if(i<0||j<0||j>=ids.length)return;[ids[i],ids[j]]=[ids[j],ids[i]];S.manual.order=S.manual.order||{};S.manual.order[Lid]=ids;changed();render();return}
+  if(b.dataset.mrestore){if(readOnly||!PERM.canPlan)return;const id=b.dataset.mrestore;if(S.manual.skip)delete S.manual.skip[id];if(S.manual.kg)delete S.manual.kg[id];changed();render();return}
   if(b.dataset.mreset){if(readOnly||!PERM.canPlan)return;delete S.manual.order[b.dataset.mreset];changed();render();return}
   if(b.dataset.ev){entryView=b.dataset.ev;render();return}
   if(b.dataset.nv){notesView=b.dataset.nv;render();return}
