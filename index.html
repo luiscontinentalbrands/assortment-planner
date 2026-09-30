@@ -194,7 +194,7 @@ tr.pos-short .pb-s{background:var(--bad);opacity:.8}tr.pos-over .pb-s{background
 .scards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
 @media (max-width:980px){.scards{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:420px){.scards{grid-template-columns:1fr}}
-.sc{background:var(--surface);border:1px solid var(--rule);border-top:5px solid var(--lc);padding:10px 12px;display:grid;gap:4px}
+.sc{background:var(--surface);border:1px solid var(--rule);border-top:5px solid var(--lc);padding:10px 12px;display:grid;gap:4px;align-content:start}
 .sc h3{display:flex;align-items:center;gap:6px;margin-bottom:4px}
 .sc-row{display:flex;justify-content:space-between;gap:8px;font-size:13px}
 .sc-row span{color:var(--muted)}
@@ -271,9 +271,9 @@ function defaults(){
   const orders={}, stock={}, rates={}, lineOf={};
   SEED.products.forEach(p=>orders[p.id]={cases:p.cases,priority:'Normal',due:''});
   SEED.biscuits.forEach(b=>{stock[b.id]=b.stock;rates[b.id]=b.kgph;lineOf[b.id]=b.line});
-  const ref={repack:{},crate:{},pieceG:{},packs:JSON.parse(JSON.stringify(PACKS0))};
+  const ref={alt:{'saltine-wholewheat':['LASER'],'octagonal-poppy-seed':['LASER']},repack:{},crate:{},pieceG:{},packs:JSON.parse(JSON.stringify(PACKS0))};
   SEED.products.forEach(p=>ref.repack[p.id]=p.repack||0);SEED.biscuits.forEach(b=>{ref.crate[b.id]=b.crate;ref.pieceG[b.id]=0});
-  return {orders,opening:{date:todayISO(),stock},rates,lineOf,log:{},ref,manual:{order:{},pin:{},kg:{},skip:{}},settings:{start:todayISO(),workDays:[1,2,3,4,5],lineDays:{FGC2:[1,2,3,4,5],POLIN:[0,1,2,3,4,5,6],WAFER:[1,2,3,4,5],FGC1:[1,2,3,4,5],LASER:[1,2,3,4,5,6],REPACK:[1,2,3,4,5]},hpd:{FGC2:24,POLIN:24,WAFER:24,FGC1:24,LASER:24},changeover:0,mode:'jit',buffer:2,runOrder:'stock',overPct:150,crates:0,repackHpd:24,eff:{FGC2:100,POLIN:100,WAFER:100,FGC1:100,LASER:100},shiftMax:{FGC2:{d:2,n:1},POLIN:{d:2,n:1},LASER:{d:2,n:1},WAFER:{d:0,n:0},FGC1:{d:0,n:0}}},onlyActive:true};
+  return {orders,opening:{date:todayISO(),stock},rates,lineOf,log:{},ref,manual:{order:{},pin:{},kg:{},skip:{},line:{}},settings:{start:todayISO(),workDays:[1,2,3,4,5],lineDays:{FGC2:[1,2,3,4,5],POLIN:[0,1,2,3,4,5,6],WAFER:[1,2,3,4,5],FGC1:[1,2,3,4,5],LASER:[1,2,3,4,5,6],REPACK:[1,2,3,4,5]},hpd:{FGC2:24,POLIN:24,WAFER:24,FGC1:24,LASER:24},changeover:0,mode:'jit',buffer:2,runOrder:'stock',overPct:150,crates:0,repackHpd:24,eff:{FGC2:100,POLIN:100,WAFER:100,FGC1:100,LASER:100},shiftMax:{FGC2:{d:2,n:1},POLIN:{d:2,n:1},LASER:{d:2,n:1},WAFER:{d:0,n:0},FGC1:{d:0,n:0}}},onlyActive:true};
 }
 function merge(base,src){
   const s=JSON.parse(JSON.stringify(base));
@@ -282,7 +282,8 @@ function merge(base,src){
   const op=src.opening||(src.stock?{date:(src.settings&&src.settings.start)||todayISO(),stock:src.stock}:null);
   if(op){ if(op.date) s.opening.date=op.date; if(op.stock) for(const id in op.stock) if(id in s.opening.stock) s.opening.stock[id]=op.stock[id]; }
   if(src.log) s.log=JSON.parse(JSON.stringify(src.log));
-  if(src.manual){const m=src.manual;s.manual={order:JSON.parse(JSON.stringify(m.order||{})),pin:Object.assign({},m.pin||{}),kg:Object.assign({},m.kg||{}),skip:Object.assign({},m.skip||{})}}
+  if(src.manual){const m=src.manual;s.manual={line:Object.assign({},m.line||{}),order:JSON.parse(JSON.stringify(m.order||{})),pin:Object.assign({},m.pin||{}),kg:Object.assign({},m.kg||{}),skip:Object.assign({},m.skip||{})}}
+  if(src.ref&&src.ref.alt) s.ref.alt=Object.assign({},s.ref.alt,JSON.parse(JSON.stringify(src.ref.alt)));
   if(src.ref) for(const k of ['repack','crate','pieceG','packs']) if(src.ref[k]) for(const id in src.ref[k]) if(id in s.ref[k]) s.ref[k][id]=(k==='packs'?Object.assign({},s.ref[k][id],src.ref[k][id]):src.ref[k][id]);
   if(src.settings){Object.assign(s.settings,src.settings);s.settings.hpd=Object.assign({},base.settings.hpd,src.settings.hpd||{});s.settings.lineDays=Object.assign({},base.settings.lineDays,src.settings.lineDays||{});s.settings.shiftMax=Object.assign({},base.settings.shiftMax,src.settings.shiftMax||{});s.settings.eff=Object.assign({},base.settings.eff,src.settings.eff||{})}
   if('onlyActive' in src) s.onlyActive=src.onlyActive;
@@ -324,9 +325,9 @@ function stockAtStart(Lg,date){ // stock at the start of a given day
 }
 
 /* ---------------- core calculation ---------------- */
-function compute(){
+function compute(opts){ opts=opts||{};
   const st=S.settings;
-  const lineOf=S.lineOf;
+  const lineOf=Object.assign({},S.lineOf);
   const LG=ledger(); const onHand={}; SEED.biscuits.forEach(b=>onHand[b.id]=Math.max(0,LG.onHand[b.id]));
   // products in priority order
   const prods=SEED.products.map((p,i)=>{const o=S.orders[p.id];const rem=Math.max(0,num(o.cases)-(LG.packed[p.id]||0));return {p,o,i,rem}});
@@ -361,6 +362,24 @@ function compute(){
     if(M.skip&&M.skip[b.id]){plan=0;man=true} else if(M.kg&&M.kg[b.id]!=null&&M.kg[b.id]!==''){plan=Math.max(0,num(M.kg[b.id]));man=true}
     bis[b.id]={id:b.id,name:b.name,line:lineOf[b.id],req:r,stock,short:plan,autoShort:short,manual:man,skipped:!!(M.skip&&M.skip[b.id]),hours:plan/rate,crates:plan/(num(S.ref.crate[b.id])||b.crate||1),rate,crate:num(S.ref.crate[b.id])||b.crate};
   });
+  // biscuits that can run on more than one line: manual choice, else the less loaded line
+  {const effOf=l=>Math.max(0.05,(num((st.eff||{})[l])||100)/100);
+   const capOf=l=>Math.max(1,(((st.lineDays&&st.lineDays[l])||st.workDays).length)*Math.min(24,num(st.hpd[l])||0));
+   const load={}; LINES.forEach(L=>load[L.id]=0); const flex=[];
+   Object.values(bis).forEach(b=>{const alts=[...new Set([S.lineOf[b.id],...(((S.ref.alt||{})[b.id])||[])])].filter(l=>LBY[l]); b.alts=alts;
+     const mch=S.manual&&S.manual.line&&S.manual.line[b.id];
+     if(mch&&alts.includes(mch)){b.line=mch;b.lineManual=true}
+     else if(opts.force&&opts.force[b.id]){b.line=opts.force[b.id];b.lineManual=true}
+     if(alts.length>1&&!b.lineManual&&b.short>0.5) flex.push(b); else load[b.line]+=b.hours/capOf(b.line);});
+   let chosen=null;
+   if(flex.length&&flex.length<=4&&!opts.noFlex){ // try every combination and keep the one that gets all orders ready soonest
+     const combos=[{}]; flex.forEach(b=>{const nx=[];combos.forEach(c=>b.alts.forEach(l=>nx.push(Object.assign({},c,{[b.id]:l}))));combos.splice(0,combos.length,...nx)});
+     let bestScore=1e18;
+     combos.forEach(c=>{const C2=compute({force:Object.assign({},opts.force||{},c),noFlex:true});let mx=0,sm=0;C2.plist.forEach(x=>{if(!x.I)return;const v=x.ready?x.ready.abs:0;mx=Math.max(mx,v);sm+=v});const sc=mx*1000+sm;if(sc<bestScore-1e-6){bestScore=sc;chosen=c}});
+   }
+   if(chosen){flex.forEach(b=>{b.line=chosen[b.id];});}
+   else flex.sort((a,b)=>b.short-a.short).forEach(b=>{let best=b.line,bv=1e18;b.alts.forEach(l=>{const h=b.short/((num(S.rates[b.id])||1)*effOf(l));const v=load[l]+h/capOf(l);if(v<bv-1e-9){bv=v;best=l}});b.line=best;load[best]=bv;});
+   Object.values(bis).forEach(b=>{if(b.line!==S.lineOf[b.id]){b.rate=(num(S.rates[b.id])||1)*effOf(b.line);b.hours=b.short/b.rate} lineOf[b.id]=b.line;});}
   // a biscuit planned below what the orders need leaves the least urgent orders uncovered
   const UNC={}, uncBy={};
   Object.values(bis).forEach(b=>{let def=b.autoShort-b.short; if(def<=0.5) return;
@@ -720,7 +739,7 @@ function ctrlCells(C,b,Lid){
   return `<td style="white-space:nowrap"><button class="btn" data-mv="${b.id}" data-line="${Lid}" data-dir="-1" aria-label="Move earlier"${i<=0?' disabled':''}>↑</button><button class="btn" data-mv="${b.id}" data-line="${Lid}" data-dir="1" aria-label="Move later"${i<0||i>=n-1?' disabled':''}>↓</button></td>
   <td class="r"><input class="in" type="text" inputmode="decimal" autocomplete="off" id="mkg-${b.id}" data-mkg="${b.id}" value="${kgv!=null&&kgv!==''?kgv:''}" placeholder="${n0(b.autoShort)}" title="Suggested ${n0(b.autoShort)} kg" style="width:80px"></td>
   <td style="white-space:nowrap"><input type="date" id="pind-${b.id}" data-pind="${b.id}" value="${pd}" style="width:128px"> <select id="pins-${b.id}" data-pins="${b.id}"><option value="d"${ps==='d'?' selected':''}>Day</option><option value="n"${ps==='n'?' selected':''}>Night</option></select></td>
-  <td><label class="tog"><input type="checkbox" id="skip-${b.id}" data-skip="${b.id}"${b.skipped?' checked':''}> Skip</label></td>`;
+  <td style="white-space:nowrap"><label class="tog"><input type="checkbox" id="skip-${b.id}" data-skip="${b.id}"${b.skipped?' checked':''}> Skip</label>${(b.alts||[]).length>1?` <select id="mline-${b.id}" data-mline="${b.id}" title="Line"><option value="">Line: auto</option>${b.alts.map(l=>`<option value="${l}"${S.manual.line&&S.manual.line[b.id]===l?' selected':''}>${LBY[l].name}</option>`).join('')}</select>`:''}</td>`;
 }
 function impactHTML(C){
   if(!hasManual()) return '';
@@ -730,8 +749,8 @@ function impactHTML(C){
   return `<section class="panel" style="gap:8px"><div class="toolbar"><h3>Your adjustments</h3><div class="grp">${confirmBtn('manreset','Back to automatic plan','Remove all adjustments?')}</div></div>
   ${rows?`<div class="tablebox"><table class="compact"><thead><tr><th>Order</th><th>Automatic plan: packed by</th><th>With adjustments</th><th class="r">Change</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="muted">The adjustments do not change any order date.</div>'}</section>`;
 }
-function hasManual(){const m=S.manual||{};return ['order','pin','kg','skip'].some(k=>m[k]&&Object.keys(m[k]).length)}
-function autoCompute(){const keep=S.manual;S.manual={order:{},pin:{},kg:{},skip:{}};let A;try{A=compute()}finally{S.manual=keep}return A}
+function hasManual(){const m=S.manual||{};return ['order','pin','kg','skip','line'].some(k=>m[k]&&Object.keys(m[k]).length)}
+function autoCompute(){const keep=S.manual;S.manual={order:{},pin:{},kg:{},skip:{},line:{}};let A;try{A=compute()}finally{S.manual=keep}return A}
 let pending=null;
 function confirmBtn(key,label,q){
   if(pending===key) return `<span class="confirm">${q} <button class="btn danger" data-act="${key}-yes">Yes</button><button class="btn" data-act="cancel">No</button></span>`;
@@ -971,7 +990,7 @@ function vStock(C){
 
 let notesView='notes', packSel=null;
 function vNotes(C){
-  const seg=`<div class="days mode">${[['notes','Notes'],['repack','Repacking'],['crates','Crate weights'],['pieces','Biscuit weights'],['packs','Pack contents']].map(([k,t])=>`<button data-nv="${k}" aria-pressed="${notesView===k}">${t}</button>`).join('')}</div>`;
+  const seg=`<div class="days mode">${[['notes','Notes'],['lines','Lines'],['repack','Repacking'],['crates','Crate weights'],['pieces','Biscuit weights'],['packs','Pack contents']].map(([k,t])=>`<button data-nv="${k}" aria-pressed="${notesView===k}">${t}</button>`).join('')}</div>`;
   const head=`<section class="toolbar"><div class="grp"><h2>Data notes</h2><span class="muted">Reference data behind the plan. Shaded cells can be edited.</span></div><div class="grp">${seg}</div></section>`;
   if(notesView==='repack'){
     const rows=['Sweet','Savoury'].map(cat=>`<tr class="group"><td colspan="2">${cat}</td></tr>`+SEED.products.filter(p=>p.cat===cat).map(p=>{const r=num(S.ref.repack[p.id]);
@@ -982,6 +1001,18 @@ function vNotes(C){
     const rows=LINES.map(L=>`<tr class="group"><td colspan="2">${lineDot(L.id)} ${L.name}</td></tr>`+SEED.biscuits.filter(b=>S.lineOf[b.id]===L.id).map(b=>{const k=num(S.ref.crate[b.id]);
       return `<tr><td>${esc(b.name)}</td><td class="r"><input class="in" type="text" inputmode="decimal" autocomplete="off" min="0" step="0.1" id="cr-${b.id}" data-cr="${b.id}" value="${k||''}" aria-label="Kg per crate"></td></tr>`}).join('')).join('');
     return head+`<div class="tablebox" style="max-width:620px"><table class="compact" style="min-width:0"><thead><tr><th>Biscuit</th><th class="r">Crate weight (kg)</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  if(notesView==='lines'){
+    const alt=S.ref.alt||{};
+    const cards=LINES.map(L=>{const main=SEED.biscuits.filter(b=>S.lineOf[b.id]===L.id), also=SEED.biscuits.filter(b=>S.lineOf[b.id]!==L.id&&(alt[b.id]||[]).includes(L.id));
+      return `<section class="sc" style="--lc:var(${L.v})"><h3>${lineDot(L.id)} ${L.name} <span class="muted" style="font:500 12px var(--sans);text-transform:none;letter-spacing:0">${L.colour}</span></h3>
+      <div style="display:grid;gap:3px;font-size:13px">${main.map(b=>`<div>${esc(b.name)}</div>`).join('')}${also.map(b=>`<div><i>${esc(b.name)}</i> <span class="chip idle">also</span></div>`).join('')}</div></section>`}).join('');
+    const rows=SEED.biscuits.map(b=>`<tr><td>${esc(b.name)}</td><td><select id="l-${b.id}" data-l="${b.id}" aria-label="Main line">${LINES.map(x=>`<option value="${x.id}"${S.lineOf[b.id]===x.id?' selected':''}>${x.name}</option>`).join('')}</select></td>
+      ${LINES.map(L=>`<td style="text-align:center">${S.lineOf[b.id]===L.id?'<span class="chip ok">main</span>':`<input type="checkbox" id="alt-${b.id}-${L.id}" data-alt="${b.id}" data-al="${L.id}"${(alt[b.id]||[]).includes(L.id)?' checked':''} aria-label="Can also run on ${L.name}">`}</td>`).join('')}
+      <td>${C.bis[b.id]&&C.bis[b.id].short>0.5?`${lineDot(C.bis[b.id].line)} ${LBY[C.bis[b.id].line].name}`:'<span class="muted">—</span>'}</td></tr>`).join('');
+    return head+`<div class="scards">${cards}</div>
+    <div class="tablebox"><table><thead><tr><th>Biscuit</th><th>Main line</th>${LINES.map(L=>`<th style="text-align:center">${lineDot(L.id)} ${L.name}</th>`).join('')}<th>In this plan</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="legend"><span>Tick the other lines a biscuit can also run on. When a biscuit has more than one line, the planner puts it on the less loaded line; in Production plan → Edit plan you can fix the line yourself. The whole run goes on one line.</span></div>`;
   }
   if(notesView==='pieces'){
     const rows=LINES.map(L=>`<tr class="group"><td colspan="6">${lineDot(L.id)} ${L.name}</td></tr>`+SEED.biscuits.filter(b=>S.lineOf[b.id]===L.id).map(b=>{const g=num(S.ref.pieceG[b.id]);const k=num(S.ref.crate[b.id]);const r=num(S.rates[b.id]);
@@ -1070,6 +1101,8 @@ $main.addEventListener('change',e=>{
   else if(t.id==='packSel'){packSel=t.value;render()}
   else if(t.dataset.l){S.lineOf[t.dataset.l]=t.value;changed()}
   else if(t.dataset.pins){S.manual.pin=S.manual.pin||{};const id=t.dataset.pins,d=(document.getElementById('pind-'+id)||{}).value;if(d){S.manual.pin[id]=d+'|'+t.value;changed()}}
+  else if(t.dataset.mline){S.manual.line=S.manual.line||{};if(t.value)S.manual.line[t.dataset.mline]=t.value;else delete S.manual.line[t.dataset.mline];changed()}
+  else if(t.dataset.alt){S.ref.alt=S.ref.alt||{};const a=new Set(S.ref.alt[t.dataset.alt]||[]);t.checked?a.add(t.dataset.al):a.delete(t.dataset.al);S.ref.alt[t.dataset.alt]=[...a];changed()}
   else if(t.dataset.skip){S.manual.skip=S.manual.skip||{};if(t.checked)S.manual.skip[t.dataset.skip]=true;else delete S.manual.skip[t.dataset.skip];changed()}
   else if(t.tagName==='SELECT'&&t.dataset.o){S.orders[t.dataset.o].priority=t.value;changed()}
 });
@@ -1095,7 +1128,7 @@ $main.addEventListener('click',e=>{
   if(a==='cancel'){pending=null;render();return}
   if(a==='editplan'){editPlan=!editPlan;render();return}
   if(a==='manreset'){if(readOnly||!PERM.canPlan)return;pending=a;render();return}
-  if(a==='manreset-yes'){S.manual={order:{},pin:{},kg:{},skip:{}};pending=null;changed();render();return}
+  if(a==='manreset-yes'){S.manual={order:{},pin:{},kg:{},skip:{},line:{}};pending=null;changed();render();return}
   if(a==='clear'||a==='reset'){if(readOnly||!PERM.canPlan)return;pending=a;render();return}
   if(a==='clear-yes'){for(const id in S.orders){S.orders[id].cases=0}pending=null;S.onlyActive=false;changed();render();return}
   if(a==='reset-yes'){const keep=S.settings,lg=S.log;S=defaults();S.settings=keep;S.log=lg;pending=null;changed();render();return}
