@@ -271,7 +271,7 @@ function defaults(){
   const orders={}, stock={}, rates={}, lineOf={};
   SEED.products.forEach(p=>orders[p.id]={cases:p.cases,priority:'Normal',due:''});
   SEED.biscuits.forEach(b=>{stock[b.id]=b.stock;rates[b.id]=b.kgph;lineOf[b.id]=b.line});
-  const ref={alt:{'saltine-wholewheat':['LASER'],'octagonal-poppy-seed':['LASER']},repack:{},crate:{},pieceG:{},packs:JSON.parse(JSON.stringify(PACKS0))};
+  const ref={alt:{'saltine-wholewheat':['LASER'],'octagonal-poppy-seed':['LASER'],'finger':['POLIN'],'oval-de-vries':['POLIN'],'choco-rings-white-choc':['POLIN'],'choco-ring-dark':['POLIN']},repack:{},crate:{},pieceG:{},packs:JSON.parse(JSON.stringify(PACKS0))};
   SEED.products.forEach(p=>ref.repack[p.id]=p.repack||0);SEED.biscuits.forEach(b=>{ref.crate[b.id]=b.crate;ref.pieceG[b.id]=0});
   return {orders,opening:{date:todayISO(),stock},rates,lineOf,log:{},ref,manual:{order:{},pin:{},kg:{},skip:{},line:{}},settings:{start:todayISO(),workDays:[1,2,3,4,5],lineDays:{FGC2:[1,2,3,4,5],POLIN:[0,1,2,3,4,5,6],WAFER:[1,2,3,4,5],FGC1:[1,2,3,4,5],LASER:[1,2,3,4,5,6],REPACK:[1,2,3,4,5]},hpd:{FGC2:24,POLIN:24,WAFER:24,FGC1:24,LASER:24},changeover:0,mode:'jit',buffer:2,runOrder:'stock',overPct:150,crates:0,repackHpd:24,eff:{FGC2:100,POLIN:100,WAFER:100,FGC1:100,LASER:100},shiftMax:{FGC2:{d:2,n:1},POLIN:{d:2,n:1},LASER:{d:2,n:1},WAFER:{d:0,n:0},FGC1:{d:0,n:0}}},onlyActive:true};
 }
@@ -372,10 +372,12 @@ function compute(opts){ opts=opts||{};
      else if(opts.force&&opts.force[b.id]){b.line=opts.force[b.id];b.lineManual=true}
      if(alts.length>1&&!b.lineManual&&b.short>0.5) flex.push(b); else load[b.line]+=b.hours/capOf(b.line);});
    let chosen=null;
-   if(flex.length&&flex.length<=4&&!opts.noFlex){ // try every combination and keep the one that gets all orders ready soonest
-     const combos=[{}]; flex.forEach(b=>{const nx=[];combos.forEach(c=>b.alts.forEach(l=>nx.push(Object.assign({},c,{[b.id]:l}))));combos.splice(0,combos.length,...nx)});
-     let bestScore=1e18;
-     combos.forEach(c=>{const C2=compute({force:Object.assign({},opts.force||{},c),noFlex:true});let mx=0,sm=0;C2.plist.forEach(x=>{if(!x.I)return;const v=x.ready?x.ready.abs:0;mx=Math.max(mx,v);sm+=v});const sc=mx*1000+sm;if(sc<bestScore-1e-6){bestScore=sc;chosen=c}});
+   if(flex.length&&!opts.noFlex){ // try each line for each flexible biscuit in turn, keep what gets orders ready soonest
+     const score=c=>{const C2=compute({force:Object.assign({},opts.force||{},c),noFlex:true});let mx=0,sm=0;C2.plist.forEach(x=>{if(!x.I)return;const v=x.uncovered?1e7:(x.ready?x.ready.abs:0);mx=Math.max(mx,v);sm+=v});return mx*1000+sm};
+     chosen={}; flex.forEach(b=>chosen[b.id]=b.line); let best=score(chosen);
+     for(let pass=0;pass<2;pass++){let improved=false;
+       flex.forEach(b=>b.alts.forEach(l=>{if(l===chosen[b.id])return;const c=Object.assign({},chosen,{[b.id]:l});const sc=score(c);if(sc<best-1e-6){best=sc;chosen=c;improved=true}}));
+       if(!improved)break;}
    }
    if(chosen){flex.forEach(b=>{b.line=chosen[b.id];});}
    else flex.sort((a,b)=>b.short-a.short).forEach(b=>{let best=b.line,bv=1e18;b.alts.forEach(l=>{const h=b.short/((num(S.rates[b.id])||1)*effOf(l));const v=load[l]+h/capOf(l);if(v<bv-1e-9){bv=v;best=l}});b.line=best;load[best]=bv;});
