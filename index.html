@@ -273,7 +273,7 @@ function defaults(){
   SEED.biscuits.forEach(b=>{stock[b.id]=b.stock;rates[b.id]=b.kgph;lineOf[b.id]=b.line});
   const ref={alt:{'saltine-wholewheat':['LASER'],'octagonal-poppy-seed':['LASER'],'finger':['POLIN'],'oval-de-vries':['POLIN'],'choco-rings-white-choc':['POLIN'],'choco-ring-dark':['POLIN']},repack:{},crate:{},pieceG:{},packs:JSON.parse(JSON.stringify(PACKS0))};
   SEED.products.forEach(p=>ref.repack[p.id]=p.repack||0);SEED.biscuits.forEach(b=>{ref.crate[b.id]=b.crate;ref.pieceG[b.id]=0});
-  return {orders,opening:{date:todayISO(),stock},rates,lineOf,log:{},ref,manual:{order:{},pin:{},kg:{},skip:{},line:{}},settings:{start:todayISO(),workDays:[1,2,3,4,5],lineDays:{FGC2:[1,2,3,4,5],POLIN:[0,1,2,3,4,5,6],WAFER:[1,2,3,4,5],FGC1:[1,2,3,4,5],LASER:[1,2,3,4,5,6],REPACK:[1,2,3,4,5]},hpd:{FGC2:24,POLIN:24,WAFER:24,FGC1:24,LASER:24},changeover:0,mode:'jit',buffer:2,runOrder:'stock',overPct:150,crates:0,repackHpd:24,eff:{FGC2:100,POLIN:100,WAFER:100,FGC1:100,LASER:100},shiftMax:{FGC2:{d:2,n:1},POLIN:{d:2,n:1},LASER:{d:2,n:1},WAFER:{d:0,n:0},FGC1:{d:0,n:0}}},onlyActive:true};
+  return {orders,opening:{date:todayISO(),stock},rates,lineOf,log:{},ref,manual:{order:{},pin:{},kg:{},hrs:{},skip:{},line:{}},settings:{start:todayISO(),workDays:[1,2,3,4,5],lineDays:{FGC2:[1,2,3,4,5],POLIN:[0,1,2,3,4,5,6],WAFER:[1,2,3,4,5],FGC1:[1,2,3,4,5],LASER:[1,2,3,4,5,6],REPACK:[1,2,3,4,5]},hpd:{FGC2:24,POLIN:24,WAFER:24,FGC1:24,LASER:24},changeover:0,mode:'jit',buffer:2,runOrder:'stock',overPct:150,crates:0,repackHpd:24,eff:{FGC2:100,POLIN:100,WAFER:100,FGC1:100,LASER:100},shiftMax:{FGC2:{d:2,n:1},POLIN:{d:2,n:1},LASER:{d:2,n:1},WAFER:{d:0,n:0},FGC1:{d:0,n:0}}},onlyActive:true};
 }
 function merge(base,src){
   const s=JSON.parse(JSON.stringify(base));
@@ -282,7 +282,7 @@ function merge(base,src){
   const op=src.opening||(src.stock?{date:(src.settings&&src.settings.start)||todayISO(),stock:src.stock}:null);
   if(op){ if(op.date) s.opening.date=op.date; if(op.stock) for(const id in op.stock) if(id in s.opening.stock) s.opening.stock[id]=op.stock[id]; }
   if(src.log) s.log=JSON.parse(JSON.stringify(src.log));
-  if(src.manual){const m=src.manual;s.manual={line:Object.assign({},m.line||{}),order:JSON.parse(JSON.stringify(m.order||{})),pin:Object.assign({},m.pin||{}),kg:Object.assign({},m.kg||{}),skip:Object.assign({},m.skip||{})}}
+  if(src.manual){const m=src.manual;s.manual={line:Object.assign({},m.line||{}),order:JSON.parse(JSON.stringify(m.order||{})),pin:Object.assign({},m.pin||{}),kg:Object.assign({},m.kg||{}),hrs:Object.assign({},m.hrs||{}),skip:Object.assign({},m.skip||{})}}
   if(src.ref&&src.ref.alt) s.ref.alt=Object.assign({},s.ref.alt,JSON.parse(JSON.stringify(src.ref.alt)));
   if(src.ref) for(const k of ['repack','crate','pieceG','packs']) if(src.ref[k]) for(const id in src.ref[k]) if(id in s.ref[k]) s.ref[k][id]=(k==='packs'?Object.assign({},s.ref[k][id],src.ref[k][id]):src.ref[k][id]);
   if(src.settings){Object.assign(s.settings,src.settings);s.settings.hpd=Object.assign({},base.settings.hpd,src.settings.hpd||{});s.settings.lineDays=Object.assign({},base.settings.lineDays,src.settings.lineDays||{});s.settings.shiftMax=Object.assign({},base.settings.shiftMax,src.settings.shiftMax||{});s.settings.eff=Object.assign({},base.settings.eff,src.settings.eff||{})}
@@ -382,6 +382,8 @@ function compute(opts){ opts=opts||{};
    if(chosen){flex.forEach(b=>{b.line=chosen[b.id];});}
    else flex.sort((a,b)=>b.short-a.short).forEach(b=>{let best=b.line,bv=1e18;b.alts.forEach(l=>{const h=b.short/((num(S.rates[b.id])||1)*effOf(l));const v=load[l]+h/capOf(l);if(v<bv-1e-9){bv=v;best=l}});b.line=best;load[best]=bv;});
    Object.values(bis).forEach(b=>{if(b.line!==S.lineOf[b.id]){b.rate=(num(S.rates[b.id])||1)*effOf(b.line);b.hours=b.short/b.rate} lineOf[b.id]=b.line;});}
+  // run length typed in hours: kg to make = hours × the line's rate
+  Object.values(bis).forEach(b=>{const M=S.manual||{};const h=M.hrs&&M.hrs[b.id];if(b.skipped||h==null||h==='')return;const hh=Math.max(0,num(h));b.short=hh*b.rate;b.hours=hh;b.manual=true;b.crates=b.short/(b.crate||1);});
   // a biscuit planned below what the orders need leaves the least urgent orders uncovered
   const UNC={}, uncBy={};
   Object.values(bis).forEach(b=>{let def=b.autoShort-b.short; if(def<=0.5) return;
@@ -432,8 +434,9 @@ function compute(opts){ opts=opts||{};
     const tasks=Object.values(bis).filter(b=>b.line===L.id&&b.short>0.5).sort(byStock?((a,b)=>(a.cover-b.cover)||((rank[a.id]??1e9)-(rank[b.id]??1e9))):((a,b)=>((rank[a.id]??1e9)-(rank[b.id]??1e9))||(a.hours-b.hours)));
     const MO=(S.manual&&S.manual.order&&S.manual.order[L.id])||null;
     if(MO){const ix=id=>{const k=MO.indexOf(id);return k<0?1e6:k};tasks.sort((a,b)=>ix(a.id)-ix(b.id))}
-    const pinW=id=>{const pv=S.manual&&S.manual.pin&&S.manual.pin[id];if(!pv)return 0;const [d,sh]=String(pv).split('|');const di=Math.round((parseDate(d)-start)/864e5);return di<0?0:c.absToWork(di*24+(sh==='n'?12:0))};
-    const runs=tasks.map(b=>({b,sw:0,ew:b.hours,minW:pinW(b.id)})); place(runs,hpd,L.id,c.absToWork(T0));
+    const pinA=id=>{const pv=S.manual&&S.manual.pin&&S.manual.pin[id];if(!pv)return null;const [d,sh]=String(pv).split('|');const di=Math.round((parseDate(d)-start)/864e5);let a;const m=/^(\d{1,2}):(\d{2})$/.exec(sh||'');if(m)a=di*24+(+m[1])+(+m[2])/60-6;else a=di*24+(sh==='n'?12:0);return {a,fix:!!m}};
+    const pinW=id=>{const p=pinA(id);return !p||p.a<=0?0:c.absToWork(p.a)};
+    const runs=tasks.map(b=>{const p=pinA(b.id);return {b,sw:0,ew:b.hours,minW:pinW(b.id),fix:!!(p&&p.fix),pinAbs:p?p.a:null}}); place(runs,hpd,L.id,c.absToWork(T0));
     manualLine[L.id]=!!MO||runs.some(r=>r.minW>0);
     lines[L.id]={L,hpd,tasks,runs,hours:tasks.reduce((s,b)=>s+b.hours,0),kg:tasks.reduce((s,b)=>s+b.short,0),crates:tasks.reduce((s,b)=>s+b.crates,0),allBis:Object.values(bis).filter(b=>b.line===L.id)};
   });
@@ -449,8 +452,9 @@ function compute(opts){ opts=opts||{};
       const l=lines[L.id], c=cal[L.id]; if(!l.runs.length||c.hpd<=0) return;
       const p1=new Map(l.runs.map(r=>[r,[r.sw,r.ew]])); const end1=Math.max(...[...p1.values()].map(v=>v[1]));
       const byNeed=(byStock||manualLine[L.id])?l.runs.slice().reverse():l.runs.slice().sort((a,b)=>(N1[b.b.id]??1e12)-(N1[a.b.id]??1e12)||((rank[b.b.id]??0)-(rank[a.b.id]??0)));
-      let lim=Infinity;
-      byNeed.forEach(r=>{ const due=N1[r.b.id]; let ew=due!=null?c.absToWork(Math.max(0,due-buf)):r.ew; if(lim!==Infinity) ew=Math.min(ew,lim-co); r.ew=ew; r.sw=ew-r.b.hours; lim=r.sw; });
+      let lim=Infinity, held=false;
+      byNeed.forEach(r=>{ if(held){ const v=p1.get(r); r.sw=v[0]; r.ew=v[1]; return } // runs before a fixed-time run keep their ASAP place
+        if(r.fix&&r.minW>0){ r.sw=r.minW; r.ew=r.sw+r.b.hours; lim=Math.min(lim,r.sw); held=true; return } const due=N1[r.b.id]; let ew=due!=null?c.absToWork(Math.max(0,due-buf)):r.ew; if(lim!==Infinity) ew=Math.min(ew,lim-co); r.ew=ew; r.sw=ew-r.b.hours; lim=r.sw; });
       l.runs.sort((a,b)=>a.sw-b.sw);
       place(l.runs,c.hpd,L.id,c.absToWork(T0));
       if(l.runs.some(r=>{const e=c.toAbs(r.ew,false),nb=N1[r.b.id],e1=c.toAbs(p1.get(r)[1],false);return nb!=null&&e>nb+1e-6&&e>e1+1e-6})){ l.runs.forEach(r=>{const v=p1.get(r);r.sw=v[0];r.ew=v[1]}); l.runs.sort((a,b)=>a.sw-b.sw); }
@@ -666,7 +670,44 @@ function vOrders(C){
   <div class="legend"><span>${lineDot('FGC2')} FGC 2</span><span>${lineDot('POLIN')} Polin</span><span>${lineDot('WAFER')} Wafer</span><span>${lineDot('FGC1')} FGC 1</span><span>${lineDot('LASER')} Laser</span><span>Hover a product name to see its biscuit mix.</span></div>`;
 }
 
-let planView='day', copyMsg='';
+let planView='day', copyMsg='', printDay='';
+const LCOL={FGC2:'#d62828',POLIN:'#1e88e5',WAFER:'#f2b705',FGC1:'#2e9e4f',LASER:'#111'};
+function planDays(C){const ds=new Set();LINES.forEach(L=>C.lines[L.id].segs.forEach(s=>ds.add(s.day)));return [...ds].sort((a,b)=>a-b)}
+function printDayPlan(C,dayISO){
+  const d=Math.round((parseDate(dayISO)-C.start)/864e5); const date=addDays(C.start,d);
+  const esc2=esc, me=(window.ME&&(window.ME.name||window.ME.email))||'';
+  let body='', any=false;
+  LINES.forEach(L=>{const l=C.lines[L.id]; const segs=l.segs.filter(s=>s.day===d); if(!segs.length) return; any=true;
+    const rmap=Object.fromEntries(l.runs.map(r=>[r.b.id,r]));
+    const tr=s=>{ if(s.kind==='co') return `<tr class="co"><td>${clock(s.from)}</td><td>${clock(s.to)}</td><td colspan="5"><i>Changeover</i></td><td></td><td></td></tr>`;
+      const h=s.to-s.from, r=rmap[s.b.id], kg=h*s.b.rate, part=Math.abs(h-s.b.hours)>0.01||s.cont;
+      return `<tr><td>${clock(s.from)}</td><td>${clock(s.to)}</td><td><b>${esc2(s.b.name)}</b>${part?' <small>(part of '+n0(s.b.short)+' kg run)</small>':''}</td><td class="r"><b>${n0(kg)}</b></td><td class="r">${n1(h)}</td><td class="r">${n0(kg/(s.b.crate||1))}</td><td>${r&&r.forP?esc2(r.forP.name):''}</td><td class="w"></td><td class="w"></td></tr>`};
+    const cut=(lo,hi)=>segs.filter(s=>s.to>lo+1e-6&&s.from<hi-1e-6).map(s=>Object.assign({},s,{from:Math.max(s.from,lo),to:Math.min(s.to,hi),cont:s.from<lo-1e-6||s.to>hi+1e-6}));
+    const day=cut(0,12), night=cut(12,24);
+    const kg=segs.filter(s=>s.kind==='run').reduce((a,s)=>a+(s.to-s.from)*s.b.rate,0), hrs=segs.filter(s=>s.kind==='run').reduce((a,s)=>a+s.to-s.from,0);
+    const block=(name,list)=>list.length?`<tr class="sh"><td colspan="9">${name}</td></tr>${list.map(tr).join('')}`:`<tr class="sh"><td colspan="9">${name} — <span style="font-weight:400">no production</span></td></tr>`;
+    body+=`<section><h2><span class="dot" style="background:${LCOL[L.id]}"></span>${L.name} <small>${L.colour} line · ${n0(kg)} kg · ${n1(hrs)} h</small></h2>
+    <table><thead><tr><th>Start</th><th>Finish</th><th>Biscuit</th><th class="r">Kg</th><th class="r">Hours</th><th class="r">Crates</th><th>For</th><th>Actual kg</th><th>Sign</th></tr></thead>
+    <tbody>${block('Day shift 06:00–18:00',day)}${block('Night shift 18:00–06:00',night)}</tbody></table></section>`;});
+  if(!any) body='<p>No production planned for this day.</p>';
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>Production plan ${dayISO}</title><style>
+  @page{size:A4 landscape;margin:12mm}
+  body{font:12px/1.35 Arial,Helvetica,sans-serif;color:#000;margin:0}
+  header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:10px}
+  h1{font-size:20px;margin:0} h2{font-size:15px;margin:14px 0 4px;display:flex;align-items:center;gap:8px} h2 small{font-weight:400;color:#444;font-size:12px}
+  .dot{display:inline-block;width:14px;height:14px;border-radius:2px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  section{break-inside:avoid}
+  table{width:100%;border-collapse:collapse} th,td{border:1px solid #888;padding:5px 6px;text-align:left;vertical-align:top} th{background:#eee;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .r{text-align:right} .w{width:80px} tr.sh td{background:#f4f4f4;font-weight:700;-webkit-print-color-adjust:exact;print-color-adjust:exact} tr.co td{color:#555} small{color:#555}
+  .meta{font-size:11px;color:#333;text-align:right} .notes{margin-top:16px;border:1px solid #888;height:70px;padding:5px;color:#555}
+  </style></head><body><header><div><h1>Daily production plan — ${fmtDay(date)} ${date.getFullYear()}</h1><div>Production day 06:00 ${fmtDay(date)} to 06:00 ${fmtDay(addDays(date,1))}</div></div>
+  <div class="meta">Printed ${new Date().toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'})}${me?' by '+esc2(me):''}<br>${C.jit?'Just in time':'As soon as possible'} plan · the plan can change, check the planner for the latest</div></header>
+  ${body}<div class="notes">Notes:</div></body></html>`;
+  let f=document.getElementById('printframe'); if(f) f.remove();
+  f=document.createElement('iframe'); f.id='printframe'; f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0'; document.body.appendChild(f);
+  const w=f.contentWindow; w.document.open(); w.document.write(html); w.document.close();
+  setTimeout(()=>{w.focus();w.print()},250);
+}
 function clock(h){const t=SHIFT_START+h;const H=Math.floor(t)%24, M=Math.round((t-Math.floor(t))*60);return String(M===60?(H+1)%24:H).padStart(2,'0')+':'+String(M===60?0:M).padStart(2,'0')}
 function planRows(C){
   if(planView==='run'){
@@ -688,33 +729,33 @@ function vPlan(C){
   const rows=planRows(C);
   const totKg=rows.reduce((s,r)=>s+r.kg,0), totH=rows.reduce((s,r)=>s+r.hours,0);
   let body='';
-  if(!rows.length) body='<tr class="dim"><td colspan="10">Nothing to produce: stock covers every order.</td></tr>';
+  if(!rows.length) body=`<tr class="dim"><td colspan="${ed?12:10}">Nothing to produce: stock covers every order.</td></tr>`;
   else if(planView==='day'){
     const days=[...new Set(rows.map(r=>r.day))];
     days.forEach(d=>{
       const dr=rows.filter(r=>r.day===d);const kg=dr.reduce((s,r)=>s+r.kg,0);
       const perLine=LINES.map(L=>{const h=dr.filter(r=>r.L===L).reduce((s,r)=>s+r.hours,0);return h?`${lineDot(L.id)} ${L.name} ${n1(h)} h`:''}).filter(Boolean).join(' &nbsp; ');
-      body+=`<tr class="group"><td colspan="10">${fmtDay(addDays(C.start,d))} <span class="muted" style="font:500 12px var(--mono);text-transform:none;letter-spacing:0">· ${n0(kg)} kg · ${perLine}</span></td></tr>`;
+      body+=`<tr class="group"><td colspan="${ed?12:10}">${fmtDay(addDays(C.start,d))} <span class="muted" style="font:500 12px var(--mono);text-transform:none;letter-spacing:0">· ${n0(kg)} kg · ${perLine}</span></td></tr>`;
       LINES.forEach(L=>{const lr=dr.filter(r=>r.L===L);if(!lr.length)return;
-        body+=`<tr class="subgroup"><td colspan="10">${lineDot(L.id)} <b>${L.name}</b> <span class="muted num" style="font-size:12px">· ${lr.length} run${lr.length>1?'s':''} · ${n0(lr.reduce((a,r)=>a+r.kg,0))} kg · ${n1(lr.reduce((a,r)=>a+r.hours,0))} h</span></td></tr>`;
+        body+=`<tr class="subgroup"><td colspan="${ed?12:10}">${lineDot(L.id)} <b>${L.name}</b> <span class="muted num" style="font-size:12px">· ${lr.length} run${lr.length>1?'s':''} · ${n0(lr.reduce((a,r)=>a+r.kg,0))} kg · ${n1(lr.reduce((a,r)=>a+r.hours,0))} h</span></td></tr>`;
         body+=lr.map(r=>row(r)).join('');});
     });
   } else {
     const byStock=(S.settings.runOrder||'stock')==='stock';
     [...new Set(rows.map(r=>r.L))].forEach(L=>{
       const lr=rows.filter(r=>r.L===L), l=C.lines[L.id];
-      body+=`<tr class="group"><td colspan="10">${lineDot(L.id)} ${L.name} <span class="muted" style="font:500 12px var(--mono);text-transform:none;letter-spacing:0">· ${lr.length} runs · ${n0(lr.reduce((a,r)=>a+r.kg,0))} kg · ${n1(l.hours)} h · ${n1(l.hpd?l.hours/l.hpd:0)} days · ranked by ${byStock?'lowest stock first':'most urgent order first'}</span></td></tr>`;
+      body+=`<tr class="group"><td colspan="${ed?12:10}">${lineDot(L.id)} ${L.name} <span class="muted" style="font:500 12px var(--mono);text-transform:none;letter-spacing:0">· ${lr.length} runs · ${n0(lr.reduce((a,r)=>a+r.kg,0))} kg · ${n1(l.hours)} h · ${n1(l.hpd?l.hours/l.hpd:0)} days · ranked by ${byStock?'lowest stock first':'most urgent order first'}</span></td></tr>`;
       body+=lr.map(r=>row(r)).join('');
     });
   }
-  function row(r){const tail=ed?(r.first?ctrlCells(C,r.b,r.L.id):'<td colspan="4" class="muted" style="font-size:11px">continued</td>'):`<td class="r num">${Math.round(Math.min(1,r.b.cover)*100)}%</td><td>${r.forP?esc(r.forP.name):''}</td><td>${r.wait>12?`<span class="chip warn">${n1(r.wait)} h</span>`:`<span class="num muted">${n1(r.wait)} h</span>`}</td>`;
+  function row(r){const tail=ed?(r.first?ctrlCells(C,r.b,r.L.id):'<td colspan="5" class="muted" style="font-size:11px">continued</td>'):`<td class="r num">${Math.round(Math.min(1,r.b.cover)*100)}%</td><td>${r.forP?esc(r.forP.name):''}</td><td>${r.wait>12?`<span class="chip warn">${n1(r.wait)} h</span>`:`<span class="num muted">${n1(r.wait)} h</span>`}</td>`;
     return `<tr${ed&&(r.b.manual||(S.manual.pin&&S.manual.pin[r.b.id]))?' class="pos-over"':''}><td><span class="lname" style="font-size:14px">${r.rank?`<span class="rk">${r.rank}</span>`:''}${lineDot(r.L.id)}${r.L.name}</span></td><td>${esc(r.b.name)}${r.part?' <span class="muted" style="font-size:11px">(part)</span>':''}</td><td class="num">${r.from}</td><td class="num">${r.to}</td><td class="r num"><b>${n0(r.kg)}</b></td><td class="r num">${n1(r.hours)}</td><td class="r num">${n0(r.crates)}</td>${tail}</tr>`}
   return `<section class="toolbar">
     <div class="grp"><h2>Production plan</h2><span class="muted">${C.jit?'Just in time':'As soon as possible'} · starts ${fmtDay(C.start)} · ${n0(totKg)} kg in ${n1(totH)} line hours</span></div>
     <div class="grp"><div class="days mode"><button data-pv="day" aria-pressed="${planView==='day'}">By day</button><button data-pv="run" aria-pressed="${planView==='run'}">By line</button></div>
-    ${PERM.canPlan&&!readOnly?`<button class="btn${editPlan?' primary':''}" data-act="editplan">${editPlan?'Done editing':'Edit plan'}</button>`:''}<button class="btn primary" data-act="copy">Copy for Excel</button><span class="muted" id="copymsg" style="font-size:12px">${copyMsg}</span></div></section>
+    ${PERM.canPlan&&!readOnly?`<button class="btn${editPlan?' primary':''}" data-act="editplan">${editPlan?'Done editing':'Edit plan'}</button>`:''}<span style="display:inline-flex;gap:4px;align-items:center"><select id="printday" data-printday="1" title="Day to print">${(()=>{const ds=planDays(C);if(!ds.length)return '<option value="">No days</option>';const iso=d=>{const x=addDays(C.start,d);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0')};const opts=ds.map(iso);if(!opts.includes(printDay))printDay=opts[0];return opts.map((v,i)=>`<option value="${v}"${v===printDay?' selected':''}>${fmtDay(addDays(C.start,ds[i]))}</option>`).join('')})()}</select><button class="btn" data-act="printday">Print day plan</button></span><button class="btn primary" data-act="copy">Copy for Excel</button><span class="muted" id="copymsg" style="font-size:12px">${copyMsg}</span></div></section>
   ${impactHTML(C)}
-  ${ed?`<div class="ro-note" style="background:var(--accent-soft);color:var(--ink)">Editing the plan: ↑ ↓ change a line's run order · <b>Kg to make</b> empty = the suggestion, more builds stock, less leaves the least urgent orders short · <b>Earliest start</b> = don't start before that day / shift · <b>Skip</b> leaves the biscuit out. Changes are saved for everyone.</div>`:''}
+  ${ed?`<div class="ro-note" style="background:var(--accent-soft);color:var(--ink)">Editing the plan: ↑ ↓ change a line's run order · <b>Kg to make</b> empty = the suggestion, more builds stock, less leaves the least urgent orders short · <b>Start date &amp; time</b> = start the run at that time (if the line is busy, changing over or not working it starts at the first possible time and says so) · <b>Hours</b> = run length; the kg to make follows from the line's rate · <b>Skip</b> leaves the biscuit out. Changes are saved for everyone.</div>`:''}
   ${(()=>{const inPlan=new Set();LINES.forEach(L=>C.lines[L.id].runs.forEach(r=>inPlan.add(r.b.id)));
     const out=Object.values(C.bis).filter(b=>b.req>0.5&&!inPlan.has(b.id));
     if(!out.length) return '';
@@ -723,9 +764,9 @@ function vPlan(C){
     return `<section class="panel" style="gap:6px"><h3>Needed but not in the production plan</h3><div class="muted" style="font-size:12px">These biscuits are in the orders but have no run, and why.</div>
     <div style="display:grid;gap:6px">${out.map(b=>`<div>${lineDot(b.line)} <b>${esc(b.name)}</b> — ${why(b)}${fix(b)}</div>`).join('')}</div></section>`})()}
   <div class="tablebox"><table>
-    <thead><tr><th>${planView==='run'?'Run # · Line':'Line'}</th><th>Biscuit</th><th>Start</th><th>Finish</th><th class="r">Kg</th><th class="r">Hours</th><th class="r">Crates</th>${ed?'<th>Order</th><th class="r">Kg to make</th><th>Earliest start</th><th></th>':'<th class="r">Stock cover</th><th>For</th><th>Waits before packing</th>'}</tr></thead>
+    <thead><tr><th>${planView==='run'?'Run # · Line':'Line'}</th><th>Biscuit</th><th>Start</th><th>Finish</th><th class="r">Kg</th><th class="r">Hours</th><th class="r">Crates</th>${ed?'<th>Order</th><th class="r">Kg to make</th><th>Start date &amp; time</th><th class="r">Hours</th><th></th>':'<th class="r">Stock cover</th><th>For</th><th>Waits before packing</th>'}</tr></thead>
     <tbody>${body}</tbody>
-    <tfoot><tr><td colspan="4"><b>Total</b></td><td class="r num"><b>${n0(totKg)}</b></td><td class="r num"><b>${n1(totH)}</b></td><td class="r num">${n0(rows.reduce((s,r)=>s+r.crates,0))}</td><td colspan="3"></td></tr></tfoot>
+    <tfoot><tr><td colspan="4"><b>Total</b></td><td class="r num"><b>${n0(totKg)}</b></td><td class="r num"><b>${n1(totH)}</b></td><td class="r num">${n0(rows.reduce((s,r)=>s+r.crates,0))}</td><td colspan="${ed?5:3}"></td></tr></tfoot>
   </table></div>
   <div class="legend"><span>Times follow the Schedule tab settings (days start 06:00). “Part” means the run carries on into the next working day.</span></div>`;
 }
@@ -737,10 +778,15 @@ function planTSV(C){
 let editPlan=false;
 function ctrlCells(C,b,Lid){
   const runs=C.lines[Lid].runs, i=runs.findIndex(r=>r.b.id===b.id), n=runs.length;
-  const pv=String((S.manual.pin&&S.manual.pin[b.id])||'').split('|'), pd=pv[0]||'', ps=pv[1]||'d', kgv=S.manual.kg&&S.manual.kg[b.id];
+  const pv=String((S.manual.pin&&S.manual.pin[b.id])||'').split('|'), pd=pv[0]||'', ps=pv[1]||'', kgv=S.manual.kg&&S.manual.kg[b.id];
+  const tv=/^\d{1,2}:\d{2}$/.test(ps)?ps.padStart(5,'0'):ps==='n'?'18:00':ps==='d'?'06:00':'';
+  const run=runs[i], rate=b.hours>0?b.short/b.hours:0, hv=S.manual.hrs&&S.manual.hrs[b.id];
+  let note='';
+  if(run&&run.pinAbs!=null&&run.start){const act=run.start.day*24+run.start.hour;if(act>run.pinAbs+0.02)note=`<div class="muted" style="font-size:11px;white-space:normal;max-width:220px">Can't start then — earliest possible ${fmtWhen(C.toTime(run.start))} (line busy, changeover, shift rule or line not working)</div>`}
   return `<td style="white-space:nowrap"><button class="btn" data-mv="${b.id}" data-line="${Lid}" data-dir="-1" aria-label="Move earlier"${i<=0?' disabled':''}>↑</button><button class="btn" data-mv="${b.id}" data-line="${Lid}" data-dir="1" aria-label="Move later"${i<0||i>=n-1?' disabled':''}>↓</button></td>
-  <td class="r"><input class="in" type="text" inputmode="decimal" autocomplete="off" id="mkg-${b.id}" data-mkg="${b.id}" value="${kgv!=null&&kgv!==''?kgv:''}" placeholder="${n0(b.autoShort)}" title="Suggested ${n0(b.autoShort)} kg" style="width:80px"></td>
-  <td style="white-space:nowrap"><input type="date" id="pind-${b.id}" data-pind="${b.id}" value="${pd}" style="width:128px"> <select id="pins-${b.id}" data-pins="${b.id}"><option value="d"${ps==='d'?' selected':''}>Day</option><option value="n"${ps==='n'?' selected':''}>Night</option></select></td>
+  <td class="r"><input class="in" type="text" inputmode="decimal" autocomplete="off" id="mkg-${b.id}" data-mkg="${b.id}" value="${kgv!=null&&kgv!==''?kgv:''}" placeholder="${n0(hv!=null&&hv!==''?b.short:b.autoShort)}" title="Suggested ${n0(b.autoShort)} kg" style="width:80px"></td>
+  <td style="white-space:nowrap"><input type="date" id="pind-${b.id}" data-pind="${b.id}" value="${pd}" style="width:128px"> <input type="time" id="pins-${b.id}" data-pins="${b.id}" value="${tv}" step="900" style="width:112px" title="Start time">${note}</td>
+  <td class="r"><input class="in" type="text" inputmode="decimal" autocomplete="off" id="mhrs-${b.id}" data-mhrs="${b.id}" data-rate="${rate}" value="${hv!=null&&hv!==''?hv:''}" placeholder="${n1(b.hours)}" title="Run length in hours — changes the kg to make" style="width:60px"></td>
   <td style="white-space:nowrap"><label class="tog"><input type="checkbox" id="skip-${b.id}" data-skip="${b.id}"${b.skipped?' checked':''}> Skip</label>${(b.alts||[]).length>1?` <select id="mline-${b.id}" data-mline="${b.id}" title="Line"><option value="">Line: auto</option>${b.alts.map(l=>`<option value="${l}"${S.manual.line&&S.manual.line[b.id]===l?' selected':''}>${LBY[l].name}</option>`).join('')}</select>`:''}</td>`;
 }
 function impactHTML(C){
@@ -751,8 +797,8 @@ function impactHTML(C){
   return `<section class="panel" style="gap:8px"><div class="toolbar"><h3>Your adjustments</h3><div class="grp">${confirmBtn('manreset','Back to automatic plan','Remove all adjustments?')}</div></div>
   ${rows?`<div class="tablebox"><table class="compact"><thead><tr><th>Order</th><th>Automatic plan: packed by</th><th>With adjustments</th><th class="r">Change</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="muted">The adjustments do not change any order date.</div>'}</section>`;
 }
-function hasManual(){const m=S.manual||{};return ['order','pin','kg','skip','line'].some(k=>m[k]&&Object.keys(m[k]).length)}
-function autoCompute(){const keep=S.manual;S.manual={order:{},pin:{},kg:{},skip:{},line:{}};let A;try{A=compute()}finally{S.manual=keep}return A}
+function hasManual(){const m=S.manual||{};return ['order','pin','kg','hrs','skip','line'].some(k=>m[k]&&Object.keys(m[k]).length)}
+function autoCompute(){const keep=S.manual;S.manual={order:{},pin:{},kg:{},hrs:{},skip:{},line:{}};let A;try{A=compute()}finally{S.manual=keep}return A}
 let pending=null;
 function confirmBtn(key,label,q){
   if(pending===key) return `<span class="confirm">${q} <button class="btn danger" data-act="${key}-yes">Yes</button><button class="btn" data-act="cancel">No</button></span>`;
@@ -1055,7 +1101,7 @@ function vNotes(C){
 function applyPerms(){
   if(PERM.canPlan&&PERM.canLog) return;
   $main.querySelectorAll('input,select,button[data-mode],button[data-ro],button[data-wd],button[data-mv],button[data-mreset],button[data-act="manreset"],button[data-act="reset"],button[data-act="clear"]').forEach(el=>{
-    if(['entry-date','entryAll','packSel'].includes(el.id)) return;
+    if(['entry-date','entryAll','packSel','printday'].includes(el.id)) return;
     const ok=(el.dataset.mk||el.dataset.pk)?PERM.canLog:PERM.canPlan;
     if(!ok){el.disabled=true;el.classList.add('locked-in')}
   });
@@ -1082,8 +1128,9 @@ $main.addEventListener('input',e=>{
   else if(t.dataset.pg){S.ref.pieceG[t.dataset.pg]=num(t.value);changed()}
   else if(t.dataset.pn){S.ref.packs[t.dataset.pn].n=num(t.value);changed()}
   else if(t.dataset.pw){S.ref.packs[t.dataset.pw].g=num(t.value);changed()}
-  else if(t.dataset.mkg){const v=String(t.value).trim();S.manual.kg=S.manual.kg||{};if(v==='')delete S.manual.kg[t.dataset.mkg];else S.manual.kg[t.dataset.mkg]=num(v);changed()}
-  else if(t.dataset.pind){S.manual.pin=S.manual.pin||{};const id=t.dataset.pind;if(!t.value)delete S.manual.pin[id];else{const sh=(document.getElementById('pins-'+id)||{}).value||'d';S.manual.pin[id]=t.value+'|'+sh}changed()}
+  else if(t.dataset.mkg){const v=String(t.value).trim();S.manual.kg=S.manual.kg||{};if(v==='')delete S.manual.kg[t.dataset.mkg];else S.manual.kg[t.dataset.mkg]=num(v);if(S.manual.hrs)delete S.manual.hrs[t.dataset.mkg];changed()}
+  else if(t.dataset.mhrs){const v=String(t.value).trim(),id=t.dataset.mhrs;S.manual.hrs=S.manual.hrs||{};if(v==='')delete S.manual.hrs[id];else{S.manual.hrs[id]=num(v);if(S.manual.kg)delete S.manual.kg[id]}changed()}
+  else if(t.dataset.pind){S.manual.pin=S.manual.pin||{};const id=t.dataset.pind;if(!t.value)delete S.manual.pin[id];else{const sh=(document.getElementById('pins-'+id)||{}).value||'06:00';S.manual.pin[id]=t.value+'|'+sh}changed()}
   else if(t.dataset.os){S.opening.stock[t.dataset.os]=num(t.value);changed()}
   else if(t.dataset.od){if(t.value){S.opening.date=t.value;changed()}}
   else if(t.id==='entry-date'){if(t.value){entryDate=t.value;clearTimeout(rt);rt=setTimeout(render,150)}}
@@ -1097,12 +1144,13 @@ $main.addEventListener('change',e=>{
   const t=e.target;
   if(t.id==='entryAll'){entryAll=t.checked;render();return}
   if(t.id==='packSel'){packSel=t.value;render();return}
+  if(t.dataset.printday){printDay=t.value;return}
   if(readOnly||!PERM.canPlan) return;
   if(t.id==='onlyActive'){S.onlyActive=t.checked;changed()}
   else if(t.id==='entryAll'){entryAll=t.checked;render()}
   else if(t.id==='packSel'){packSel=t.value;render()}
   else if(t.dataset.l){S.lineOf[t.dataset.l]=t.value;changed()}
-  else if(t.dataset.pins){S.manual.pin=S.manual.pin||{};const id=t.dataset.pins,d=(document.getElementById('pind-'+id)||{}).value;if(d){S.manual.pin[id]=d+'|'+t.value;changed()}}
+  else if(t.dataset.pins){S.manual.pin=S.manual.pin||{};const id=t.dataset.pins;let d=(document.getElementById('pind-'+id)||{}).value;if(!t.value){const o=String(S.manual.pin[id]||'').split('|')[0];if(o){S.manual.pin[id]=o+'|d';changed()}return}if(!d){d=todayISO();const di=document.getElementById('pind-'+id);if(di)di.value=d}S.manual.pin[id]=d+'|'+t.value;changed()}
   else if(t.dataset.mline){S.manual.line=S.manual.line||{};if(t.value)S.manual.line[t.dataset.mline]=t.value;else delete S.manual.line[t.dataset.mline];changed()}
   else if(t.dataset.alt){S.ref.alt=S.ref.alt||{};const a=new Set(S.ref.alt[t.dataset.alt]||[]);t.checked?a.add(t.dataset.al):a.delete(t.dataset.al);S.ref.alt[t.dataset.alt]=[...a];changed()}
   else if(t.dataset.skip){S.manual.skip=S.manual.skip||{};if(t.checked)S.manual.skip[t.dataset.skip]=true;else delete S.manual.skip[t.dataset.skip];changed()}
@@ -1112,7 +1160,7 @@ $main.addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;
   if(b.dataset.sf){stockFilter=b.dataset.sf;render();return}
   if(b.dataset.mv){if(readOnly||!PERM.canPlan)return;const Lid=b.dataset.line,C0=compute();const ids=C0.lines[Lid].runs.map(r=>r.b.id);const i=ids.indexOf(b.dataset.mv),j=i+(+b.dataset.dir);if(i<0||j<0||j>=ids.length)return;[ids[i],ids[j]]=[ids[j],ids[i]];S.manual.order=S.manual.order||{};S.manual.order[Lid]=ids;changed();render();return}
-  if(b.dataset.mrestore){if(readOnly||!PERM.canPlan)return;const id=b.dataset.mrestore;if(S.manual.skip)delete S.manual.skip[id];if(S.manual.kg)delete S.manual.kg[id];changed();render();return}
+  if(b.dataset.mrestore){if(readOnly||!PERM.canPlan)return;const id=b.dataset.mrestore;if(S.manual.skip)delete S.manual.skip[id];if(S.manual.kg)delete S.manual.kg[id];if(S.manual.hrs)delete S.manual.hrs[id];changed();render();return}
   if(b.dataset.mreset){if(readOnly||!PERM.canPlan)return;delete S.manual.order[b.dataset.mreset];changed();render();return}
   if(b.dataset.ev){entryView=b.dataset.ev;render();return}
   if(b.dataset.nv){notesView=b.dataset.nv;render();return}
@@ -1123,6 +1171,7 @@ $main.addEventListener('click',e=>{
   if(b.dataset.wd!=null){if(readOnly||!PERM.canPlan)return;const d=+b.dataset.wd;const k=b.dataset.ld;S.settings.lineDays=S.settings.lineDays||{};const w=new Set(k?(S.settings.lineDays[k]||S.settings.workDays):S.settings.workDays);w.has(d)?w.delete(d):w.add(d);if(k)S.settings.lineDays[k]=[...w];else S.settings.workDays=[...w];changed();return}
   if(b.dataset.pv){planView=b.dataset.pv;copyMsg='';render();return}
   const a=b.dataset.act;if(!a)return;
+  if(a==='printday'){if(printDay)printDayPlan(compute(),printDay);return}
   if(a==='copy'){const t=planTSV(compute());const done=m=>{copyMsg=m;const el=document.getElementById('copymsg');if(el)el.textContent=m};
     try{navigator.clipboard.writeText(t).then(()=>done('Copied. Paste into Excel.'),()=>fallback())}catch(e){fallback()}
     function fallback(){const ta=document.createElement('textarea');ta.value=t;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();let ok=false;try{ok=document.execCommand('copy')}catch(e){}ta.remove();done(ok?'Copied. Paste into Excel.':'Copy blocked. Select the table and copy it instead.')}
@@ -1130,7 +1179,7 @@ $main.addEventListener('click',e=>{
   if(a==='cancel'){pending=null;render();return}
   if(a==='editplan'){editPlan=!editPlan;render();return}
   if(a==='manreset'){if(readOnly||!PERM.canPlan)return;pending=a;render();return}
-  if(a==='manreset-yes'){S.manual={order:{},pin:{},kg:{},skip:{},line:{}};pending=null;changed();render();return}
+  if(a==='manreset-yes'){S.manual={order:{},pin:{},kg:{},hrs:{},skip:{},line:{}};pending=null;changed();render();return}
   if(a==='clear'||a==='reset'){if(readOnly||!PERM.canPlan)return;pending=a;render();return}
   if(a==='clear-yes'){for(const id in S.orders){S.orders[id].cases=0}pending=null;S.onlyActive=false;changed();render();return}
   if(a==='reset-yes'){const keep=S.settings,lg=S.log;S=defaults();S.settings=keep;S.log=lg;pending=null;changed();render();return}
