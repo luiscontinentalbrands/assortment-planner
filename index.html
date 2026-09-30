@@ -229,7 +229,6 @@ tr.pos-short .pb-s{background:var(--bad);opacity:.8}tr.pos-over .pb-s{background
     <div class="ng">Plan</div>
     <button data-t="overview" aria-selected="true"><span class="ic">◧</span>Overview</button>
     <button data-t="plan" aria-selected="false"><span class="ic">≡</span>Production plan</button>
-    <button data-t="adjust" aria-selected="false"><span class="ic">✎</span>Adjust plan</button>
     <button data-t="schedule" aria-selected="false"><span class="ic">▭</span>Schedule</button>
     <button data-t="lines" aria-selected="false"><span class="ic">▤</span>Lines</button>
     <button data-t="stock" aria-selected="false"><span class="ic">▥</span>Stock by line</button>
@@ -291,7 +290,7 @@ function merge(base,src){
 }
 let S = defaults();
 let tab='overview'; let entryDate=todayISO(), entryView='day', entryAll=false;
-try{const h=location.hash.slice(1);if(['overview','plan','adjust','orders','entry','schedule','lines','stock','crates','notes','users','account'].includes(h))tab=h}catch(e){}
+try{let h=location.hash.slice(1);if(h==='adjust')h='plan';if(['overview','plan','adjust','orders','entry','schedule','lines','stock','crates','notes','users','account'].includes(h))tab=h}catch(e){}
 
 const n0=v=>Math.round(v).toLocaleString('en-ZA').replace(/ /g,' ');
 const n1=v=>(Math.round(v*10)/10).toLocaleString('en-ZA',{minimumFractionDigits:1,maximumFractionDigits:1}).replace(/ /g,' ');
@@ -515,7 +514,7 @@ function render(){
   const C=compute();
   document.querySelectorAll('#tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.t===tab?'true':'false'));
   const f=snapshotFocus();
-  $main.innerHTML = ({overview:vOverview,plan:vPlan,adjust:vAdjust,orders:vOrders,entry:vEntry,schedule:vSchedule,lines:vLines,stock:vStock,crates:vCrates,notes:vNotes,users:vUsers,account:vAccount})[tab](C);
+  $main.innerHTML = ({overview:vOverview,plan:vPlan,orders:vOrders,entry:vEntry,schedule:vSchedule,lines:vLines,stock:vStock,crates:vCrates,notes:vNotes,users:vUsers,account:vAccount})[tab](C);
   const rem=C.plist.reduce((a,p)=>a+(p.I?p.I.rem:0),0), now=C.plist.reduce((a,p)=>a+(p.I?p.I.packNow:0),0);
   const oh=Object.values(C.LG.onHand).reduce((a,v)=>a+Math.max(0,v),0);
   let fin=null;LINES.forEach(L=>{const f=C.lines[L.id].finish;if(f&&(!fin||f.day*24+f.hour>fin.day*24+fin.hour))fin=f});
@@ -588,8 +587,8 @@ function buildRecs(C){
   }
   {const ov=SEED.biscuits.map(b=>({b,c:C.bis[b.id],p:stockPos(C.bis[b.id])})).filter(x=>x.p.k==='over').sort((a,b)=>b.p.diff-a.p.diff).slice(0,4);
    if(ov.length) R.push({k:'info',tag:'Overstock',html:'Most surplus stock: '+ov.map(x=>`<b>${esc(x.b.name)}</b> +${n0(x.p.diff)} kg${x.c.req<=0.5?' (no current orders)':''}`).join(', ')+'. Don\'t make more of these; see the Stock by line tab.'});}
-  C.plist.filter(p=>p.uncovered).forEach(p=>R.push({k:'bad',tag:'Not covered',html:`<b>${esc(p.x.p.name)}</b>: the adjusted plan makes too little ${p.uncBy.map(b=>esc(BIS[b].name)).join(', ')}, so ${n0(p.I.rem-p.I.packNow)} cs can't be finished. Change it on Adjust plan.`}));
-  if(hasManual()) R.push({k:'info',tag:'Adjusted',html:'This plan includes manual adjustments. See <b>Adjust plan</b> for what changed and its effect on each order.'});
+  C.plist.filter(p=>p.uncovered).forEach(p=>R.push({k:'bad',tag:'Not covered',html:`<b>${esc(p.x.p.name)}</b>: the adjusted plan makes too little ${p.uncBy.map(b=>esc(BIS[b].name)).join(', ')}, so ${n0(p.I.rem-p.I.packNow)} cs can't be finished. Change it on Production plan → Edit plan.`}));
+  if(hasManual()) R.push({k:'info',tag:'Adjusted',html:'This plan includes manual adjustments. See <b>Production plan</b> for what changed and its effect on each order.'});
   const late=C.plist.filter(p=>p.late);
   late.forEach(p=>R.push({k:'bad',tag:'Late',html:`<b>${esc(p.x.p.name)}</b> is due ${fmtDay(parseDate(p.x.o.due))} but its last biscuit (${esc(C.bis[p.blockers[0]].name)}) is ready ${fmtWhen(p.ready)}. Raise its priority, add hours on ${[...new Set(p.blockers.map(b=>LBY[C.bis[b].line].name))].join(' / ')}, or agree a new date.`}));
   const waiting=C.plist.filter(p=>p.I&&p.I.packNow<p.I.rem&&!p.late).sort((a,b)=>(a.ready?.abs??0)-(b.ready?.abs??0)).slice(0,4);
@@ -652,7 +651,7 @@ function planRows(C){
   if(planView==='run'){
     const rows=[];
     const lineOrder=LINES.map(L=>C.lines[L.id]).filter(l=>l.runs.length).sort((a,b)=>b.hours/(b.hpd||24)-a.hours/(a.hpd||24));
-    lineOrder.forEach(l=>l.runs.forEach((r,i)=>rows.push({day:null,L:l.L,rank:i+1,b:r.b,from:fmtWhen(C.toTime(r.start)),to:fmtWhen(C.toTime(r.end)),hours:r.b.hours,kg:r.b.short,crates:r.b.crates,forP:r.forP,wait:r.wait})));
+    lineOrder.forEach(l=>l.runs.forEach((r,i)=>rows.push({day:null,first:true,L:l.L,rank:i+1,b:r.b,from:fmtWhen(C.toTime(r.start)),to:fmtWhen(C.toTime(r.end)),hours:r.b.hours,kg:r.b.short,crates:r.b.crates,forP:r.forP,wait:r.wait})));
     return rows;
   }
   const rows=[];
@@ -660,9 +659,11 @@ function planRows(C){
     l.segs.filter(s=>s.kind==='run').forEach(s=>{const h=s.to-s.from;const r=rmap[s.b.id];rows.push({day:s.day,L,b:s.b,from:clock(s.from),to:clock(s.to),fromH:s.from,hours:h,kg:h*s.b.rate,crates:h*s.b.rate/(s.b.crate||1),forP:r&&r.forP,wait:r?r.wait:0,part:Math.abs(h-s.b.hours)>0.01})});
   });
   rows.sort((a,b)=>a.day-b.day||a.fromH-b.fromH||LINES.indexOf(a.L)-LINES.indexOf(b.L));
+  const seen=new Set(); rows.forEach(r=>{r.first=!seen.has(r.b.id);seen.add(r.b.id)});
   return rows;
 }
 function vPlan(C){
+  const ed=editPlan&&PERM.canPlan&&!readOnly;
   const rows=planRows(C);
   const totKg=rows.reduce((s,r)=>s+r.kg,0), totH=rows.reduce((s,r)=>s+r.hours,0);
   let body='';
@@ -685,13 +686,17 @@ function vPlan(C){
       body+=lr.map(r=>row(r)).join('');
     });
   }
-  function row(r){return `<tr><td><span class="lname" style="font-size:14px">${r.rank?`<span class="rk">${r.rank}</span>`:''}${lineDot(r.L.id)}${r.L.name}</span></td><td>${esc(r.b.name)}${r.part?' <span class="muted" style="font-size:11px">(part)</span>':''}</td><td class="num">${r.from}</td><td class="num">${r.to}</td><td class="r num"><b>${n0(r.kg)}</b></td><td class="r num">${n1(r.hours)}</td><td class="r num">${n0(r.crates)}</td><td class="r num">${Math.round(Math.min(1,r.b.cover)*100)}%</td><td>${r.forP?esc(r.forP.name):''}</td><td>${r.wait>12?`<span class="chip warn">${n1(r.wait)} h</span>`:`<span class="num muted">${n1(r.wait)} h</span>`}</td></tr>`}
+  function row(r){const tail=ed?(r.first?ctrlCells(C,r.b,r.L.id):'<td colspan="4" class="muted" style="font-size:11px">continued</td>'):`<td class="r num">${Math.round(Math.min(1,r.b.cover)*100)}%</td><td>${r.forP?esc(r.forP.name):''}</td><td>${r.wait>12?`<span class="chip warn">${n1(r.wait)} h</span>`:`<span class="num muted">${n1(r.wait)} h</span>`}</td>`;
+    return `<tr${ed&&(r.b.manual||(S.manual.pin&&S.manual.pin[r.b.id]))?' class="pos-over"':''}><td><span class="lname" style="font-size:14px">${r.rank?`<span class="rk">${r.rank}</span>`:''}${lineDot(r.L.id)}${r.L.name}</span></td><td>${esc(r.b.name)}${r.part?' <span class="muted" style="font-size:11px">(part)</span>':''}</td><td class="num">${r.from}</td><td class="num">${r.to}</td><td class="r num"><b>${n0(r.kg)}</b></td><td class="r num">${n1(r.hours)}</td><td class="r num">${n0(r.crates)}</td>${tail}</tr>`}
   return `<section class="toolbar">
     <div class="grp"><h2>Production plan</h2><span class="muted">${C.jit?'Just in time':'As soon as possible'} · starts ${fmtDay(C.start)} · ${n0(totKg)} kg in ${n1(totH)} line hours</span></div>
     <div class="grp"><div class="days mode"><button data-pv="day" aria-pressed="${planView==='day'}">By day</button><button data-pv="run" aria-pressed="${planView==='run'}">By line</button></div>
-    <button class="btn primary" data-act="copy">Copy for Excel</button><span class="muted" id="copymsg" style="font-size:12px">${copyMsg}</span></div></section>
+    ${PERM.canPlan&&!readOnly?`<button class="btn${editPlan?' primary':''}" data-act="editplan">${editPlan?'Done editing':'Edit plan'}</button>`:''}<button class="btn primary" data-act="copy">Copy for Excel</button><span class="muted" id="copymsg" style="font-size:12px">${copyMsg}</span></div></section>
+  ${impactHTML(C)}
+  ${ed?`<div class="ro-note" style="background:var(--accent-soft);color:var(--ink)">Editing the plan: ↑ ↓ change a line's run order · <b>Kg to make</b> empty = the suggestion, more builds stock, less leaves the least urgent orders short · <b>Earliest start</b> = don't start before that day / shift · <b>Skip</b> leaves the biscuit out. Changes are saved for everyone.</div>`:''}
+  ${(()=>{const sk=Object.values(C.bis).filter(b=>b.skipped);return sk.length?`<div class="ro-note" style="background:var(--bad-soft);color:var(--bad)">Skipped in this plan: ${sk.map(b=>`${lineDot(b.line)} ${esc(b.name)}${ed?` <label class="tog"><input type="checkbox" id="skip-${b.id}" data-skip="${b.id}" checked> Skip</label>`:''}`).join(' · ')}</div>`:''})()}
   <div class="tablebox"><table>
-    <thead><tr><th>${planView==='run'?'Run # · Line':'Line'}</th><th>Biscuit</th><th>Start</th><th>Finish</th><th class="r">Kg</th><th class="r">Hours</th><th class="r">Crates</th><th class="r">Stock cover</th><th>For</th><th>Waits before packing</th></tr></thead>
+    <thead><tr><th>${planView==='run'?'Run # · Line':'Line'}</th><th>Biscuit</th><th>Start</th><th>Finish</th><th class="r">Kg</th><th class="r">Hours</th><th class="r">Crates</th>${ed?'<th>Order</th><th class="r">Kg to make</th><th>Earliest start</th><th></th>':'<th class="r">Stock cover</th><th>For</th><th>Waits before packing</th>'}</tr></thead>
     <tbody>${body}</tbody>
     <tfoot><tr><td colspan="4"><b>Total</b></td><td class="r num"><b>${n0(totKg)}</b></td><td class="r num"><b>${n1(totH)}</b></td><td class="r num">${n0(rows.reduce((s,r)=>s+r.crates,0))}</td><td colspan="3"></td></tr></tfoot>
   </table></div>
@@ -702,32 +707,25 @@ function planTSV(C){
   const head=['Date / run #','Line','Biscuit','Start','Finish','Kg','Hours','Crates','Stock cover %','For product','Waits (h)'];
   return [head.join('\t')].concat(rows.map(r=>[r.day!=null?fmtDay(addDays(C.start,r.day)):r.rank,r.L.name,r.b.name,r.from,r.to,Math.round(r.kg),r.hours.toFixed(1),Math.round(r.crates),Math.round(Math.min(1,r.b.cover)*100),r.forP?r.forP.name:'',r.wait.toFixed(1)].join('\t'))).join('\n');
 }
+let editPlan=false;
+function ctrlCells(C,b,Lid){
+  const runs=C.lines[Lid].runs, i=runs.findIndex(r=>r.b.id===b.id), n=runs.length;
+  const pv=String((S.manual.pin&&S.manual.pin[b.id])||'').split('|'), pd=pv[0]||'', ps=pv[1]||'d', kgv=S.manual.kg&&S.manual.kg[b.id];
+  return `<td style="white-space:nowrap"><button class="btn" data-mv="${b.id}" data-line="${Lid}" data-dir="-1" aria-label="Move earlier"${i<=0?' disabled':''}>↑</button><button class="btn" data-mv="${b.id}" data-line="${Lid}" data-dir="1" aria-label="Move later"${i<0||i>=n-1?' disabled':''}>↓</button></td>
+  <td class="r"><input class="in" type="text" inputmode="decimal" autocomplete="off" id="mkg-${b.id}" data-mkg="${b.id}" value="${kgv!=null&&kgv!==''?kgv:''}" placeholder="${n0(b.autoShort)}" title="Suggested ${n0(b.autoShort)} kg" style="width:80px"></td>
+  <td style="white-space:nowrap"><input type="date" id="pind-${b.id}" data-pind="${b.id}" value="${pd}" style="width:128px"> <select id="pins-${b.id}" data-pins="${b.id}"><option value="d"${ps==='d'?' selected':''}>Day</option><option value="n"${ps==='n'?' selected':''}>Night</option></select></td>
+  <td><label class="tog"><input type="checkbox" id="skip-${b.id}" data-skip="${b.id}"${b.skipped?' checked':''}> Skip</label></td>`;
+}
+function impactHTML(C){
+  if(!hasManual()) return '';
+  const A=autoCompute();
+  const impact=C.plist.filter(p=>p.I).map(p=>{const a=A.plist.find(q=>q.x.p.id===p.x.p.id);return {p,a:a&&a.packedAt,m:p.packedAt}}).filter(r=>r.p.uncovered||((r.a?r.a.abs:-1)!==(r.m?r.m.abs:-1)));
+  const rows=impact.map(r=>{const d=r.a&&r.m?(r.m.abs-r.a.abs)/24:null;return `<tr${r.p.uncovered||(d>0.01)?' class="pos-short"':''}><td><b>${esc(r.p.x.p.name)}</b></td><td class="num" style="font-size:12px">${r.a?fmtWhen(r.a):'—'}</td><td class="num" style="font-size:12px"><b>${r.p.uncovered?'Not covered':r.m?fmtWhen(r.m):'—'}</b></td><td class="r num">${r.p.uncovered?`<span class="chip bad">short of ${r.p.uncBy.map(b=>esc(BIS[b].name)).join(', ')}</span>`:d==null?'':`<span style="color:var(${d>0?'--bad':'--ok'})">${d>0?'+':'−'}${n1(Math.abs(d))} days</span>`}</td></tr>`}).join('');
+  return `<section class="panel" style="gap:8px"><div class="toolbar"><h3>Your adjustments</h3><div class="grp">${confirmBtn('manreset','Back to automatic plan','Remove all adjustments?')}</div></div>
+  ${rows?`<div class="tablebox"><table class="compact"><thead><tr><th>Order</th><th>Automatic plan: packed by</th><th>With adjustments</th><th class="r">Change</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="muted">The adjustments do not change any order date.</div>'}</section>`;
+}
 function hasManual(){const m=S.manual||{};return ['order','pin','kg','skip'].some(k=>m[k]&&Object.keys(m[k]).length)}
 function autoCompute(){const keep=S.manual;S.manual={order:{},pin:{},kg:{},skip:{}};let A;try{A=compute()}finally{S.manual=keep}return A}
-function vAdjust(C){
-  const A=hasManual()?autoCompute():C;
-  const impact=C.plist.filter(p=>p.I).map(p=>{const a=A.plist.find(q=>q.x.p.id===p.x.p.id);return {p,a:a&&a.packedAt,m:p.packedAt}}).filter(r=>r.p.uncovered||((r.a?r.a.abs:-1)!==(r.m?r.m.abs:-1)));
-  const impRows=impact.map(r=>{const d=r.a&&r.m?(r.m.abs-r.a.abs)/24:null;return `<tr${r.p.uncovered||(d>0.01)?' class="pos-short"':''}><td><b>${esc(r.p.x.p.name)}</b></td><td class="num" style="font-size:12px">${r.a?fmtWhen(r.a):'—'}</td><td class="num" style="font-size:12px"><b>${r.p.uncovered?'Not covered':r.m?fmtWhen(r.m):'—'}</b></td><td class="r num">${r.p.uncovered?`<span class="chip bad">short of ${r.p.uncBy.map(b=>esc(BIS[b].name)).join(', ')}</span>`:d==null?'':`<span style="color:var(${d>0?'--bad':'--ok'})">${d>0?'+':'−'}${n1(Math.abs(d))} days</span>`}</td></tr>`}).join('');
-  const slot=v=>{const [d,sh]=String(v||'').split('|');return {d:d||'',sh:sh||'d'}};
-  const lineTables=LINES.map(L=>{const l=C.lines[L.id];const skipped=Object.values(C.bis).filter(b=>b.line===L.id&&b.skipped);
-    if(!l.runs.length&&!skipped.length) return '';
-    const rowsH=l.runs.map((r,i)=>{const b=r.b,pv=slot(S.manual.pin&&S.manual.pin[b.id]),kgv=S.manual.kg&&S.manual.kg[b.id];const man=b.manual||!!(S.manual.pin&&S.manual.pin[b.id]);
-      return `<tr${man?' class="pos-over"':''}><td style="white-space:nowrap"><span class="rk">${i+1}</span> <button class="btn" data-mv="${b.id}" data-line="${L.id}" data-dir="-1" aria-label="Move up"${i===0?' disabled':''}>↑</button><button class="btn" data-mv="${b.id}" data-line="${L.id}" data-dir="1" aria-label="Move down"${i===l.runs.length-1?' disabled':''}>↓</button></td>
-      <td><b>${esc(b.name)}</b>${man?' <span class="chip over">adjusted</span>':''}</td>
-      <td class="r num">${n0(b.autoShort)}</td>
-      <td class="r"><input class="in" type="text" inputmode="decimal" autocomplete="off" id="mkg-${b.id}" data-mkg="${b.id}" value="${kgv!=null&&kgv!==''?kgv:''}" placeholder="${n0(b.autoShort)}" style="width:84px"></td>
-      <td style="white-space:nowrap"><input type="date" id="pind-${b.id}" data-pind="${b.id}" value="${pv.d}"> <select id="pins-${b.id}" data-pins="${b.id}"><option value="d"${pv.sh==='d'?' selected':''}>Day 06:00</option><option value="n"${pv.sh==='n'?' selected':''}>Night 18:00</option></select></td>
-      <td class="num" style="font-size:12px">${fmtWhen(C.toTime(r.start))}</td><td class="num" style="font-size:12px">${fmtWhen(C.toTime(r.end))}</td><td class="r num">${n1(b.hours)}</td>
-      <td><label class="tog"><input type="checkbox" id="skip-${b.id}" data-skip="${b.id}"> Skip</label></td></tr>`}).join('')
-      +skipped.map(b=>`<tr class="pos-short"><td></td><td><b>${esc(b.name)}</b> <span class="chip bad">skipped</span></td><td class="r num">${n0(b.autoShort)}</td><td></td><td></td><td colspan="3" class="muted" style="font-size:12px">Not in this plan</td><td><label class="tog"><input type="checkbox" id="skip-${b.id}" data-skip="${b.id}" checked> Skip</label></td></tr>`).join('');
-    return `<section style="display:grid;gap:6px"><div class="toolbar"><h3>${lineDot(L.id)} ${L.name}</h3>${(S.manual.order&&S.manual.order[L.id])?`<button class="btn" data-mreset="${L.id}">Automatic order for ${L.name}</button>`:''}</div>
-    <div class="tablebox"><table><thead><tr><th>Run</th><th>Biscuit</th><th class="r">Suggested kg</th><th class="r">Kg to make</th><th>Earliest start</th><th>Start</th><th>Finish</th><th class="r">Hours</th><th></th></tr></thead><tbody>${rowsH}</tbody></table></div></section>`}).join('');
-  return `<section class="toolbar"><div class="grp"><h2>Adjust plan</h2><span class="muted">The system's plan is the starting point. Change the run order, kg or earliest start where the floor can't follow it; every date recalculates and your changes are saved for everyone.</span></div>
-    <div class="grp">${hasManual()?confirmBtn('manreset','Back to automatic plan','Remove all adjustments?'):'<span class="chip ok">Automatic plan, no adjustments</span>'}</div></section>
-  ${hasManual()?`<section style="display:grid;gap:8px"><h2>Effect of your adjustments</h2>${impRows?`<div class="tablebox"><table class="compact"><thead><tr><th>Order</th><th>Automatic plan: packed by</th><th>With adjustments</th><th class="r">Change</th></tr></thead><tbody>${impRows}</tbody></table></div>`:'<div class="muted">No order dates change.</div>'}</section>`:''}
-  ${lineTables||'<div class="muted">Nothing to produce: stock covers every order.</div>'}
-  <div class="legend"><span><b>Kg to make</b>: leave empty for the suggestion; more builds stock, less leaves the least urgent orders short. <b>Earliest start</b>: the run won't start before that shift. ↑ ↓ fix the run order on that line. Blue rows are adjusted.</span></div>`;
-}
 let pending=null;
 function confirmBtn(key,label,q){
   if(pending===key) return `<span class="confirm">${q} <button class="btn danger" data-act="${key}-yes">Yes</button><button class="btn" data-act="cancel">No</button></span>`;
@@ -1088,6 +1086,7 @@ $main.addEventListener('click',e=>{
     function fallback(){const ta=document.createElement('textarea');ta.value=t;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();let ok=false;try{ok=document.execCommand('copy')}catch(e){}ta.remove();done(ok?'Copied. Paste into Excel.':'Copy blocked. Select the table and copy it instead.')}
     return}
   if(a==='cancel'){pending=null;render();return}
+  if(a==='editplan'){editPlan=!editPlan;render();return}
   if(a==='manreset'){if(readOnly||!PERM.canPlan)return;pending=a;render();return}
   if(a==='manreset-yes'){S.manual={order:{},pin:{},kg:{},skip:{}};pending=null;changed();render();return}
   if(a==='clear'||a==='reset'){if(readOnly||!PERM.canPlan)return;pending=a;render();return}
