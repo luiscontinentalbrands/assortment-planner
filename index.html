@@ -501,13 +501,14 @@ function compute(opts){ opts=opts||{};
     if(I.rem>I.packNow&&!UNC[x.p.id]) jobs.push({x,i,cases:I.rem-I.packNow,avail:RF[x.p.id]??0,cpc});});
   jobs.sort((a,b)=>a.avail-b.avail||a.i-b.i);
   const rc=mkCal(Math.min(24,num(st.repackHpd)||24),daysOf('REPACK'));
-  let rtW=rc.absToWork(T0), rt=0; const repJobs=[], packEnd={}, packStart={}, noRate={};
+  let rtW=rc.absToWork(T0), rt=0; const repJobs=[], packEnd={}, packStart={}, noRate={}; let nrCases=0, nrCrates=0;
   jobs.forEach(j=>{const rate=num(S.ref.repack[j.x.p.id]);const pid=j.x.p.id;const tot=j.cases*j.cpc;
+    // no repacking rate: we can't tell when these crates empty, so they are not counted as freed
+    if(!rate){noRate[pid]=true;nrCases+=j.cases;nrCrates+=tot;repJobs.push({p:j.x.p,cases:j.cases,start:j.avail,end:j.avail,rate:0,crates:tot});packEnd[pid]=Math.max(packEnd[pid]??0,j.avail);if(packStart[pid]==null)packStart[pid]=j.avail;return}
     for(const b in info[pid].per) emptyBis[b]=(emptyBis[b]||0)+j.cases*info[pid].per[b]/ck(b);
-    if(!rate){noRate[pid]=true;repJobs.push({p:j.x.p,cases:j.cases,start:j.avail,end:j.avail,rate:0});spread(emptyH,j.avail,j.avail,tot);spread(casesH,j.avail,j.avail,j.cases);packEnd[pid]=Math.max(packEnd[pid]??0,j.avail);if(packStart[pid]==null)packStart[pid]=j.avail;return}
     const sw=Math.max(rtW,rc.absToWork(j.avail)), ew=sw+j.cases/rate; rtW=ew;
     const sa=rc.toAbs(sw,true), ea=rc.toAbs(ew,false); rt=Math.max(rt,ea);
-    repJobs.push({p:j.x.p,cases:j.cases,start:sa,end:ea,rate});
+    repJobs.push({p:j.x.p,cases:j.cases,start:sa,end:ea,rate,crates:tot,cpc:j.cpc});
     rc.segs(sw,ew).forEach(g=>{const f=(g.to-g.from)/(ew-sw);spread(emptyH,g.day*24+g.from,g.day*24+g.to,tot*f);spread(casesH,g.day*24+g.from,g.day*24+g.to,j.cases*f)});
     packEnd[pid]=Math.max(packEnd[pid]??0,ea); if(packStart[pid]==null||sa<packStart[pid])packStart[pid]=sa;});
   plist.forEach(pl=>{if(!pl.I)return;const pid=pl.x.p.id;if(packEnd[pid]==null)return;
@@ -518,7 +519,7 @@ function compute(opts){ opts=opts||{};
   for(let d=0;d*24<=lastH;d++){const s0=cur;let f=0,e=0,cs=0,pk=cur;
     for(let h=d*24;h<d*24+24;h++){const fh=fillH[h]||0,eh=emptyH[h]||0;f+=fh;e+=eh;cs+=casesH[h]||0;cur=Math.max(0,cur+fh-eh);if(cur>pk)pk=cur}
     crDays.push({day:d,start:s0,fill:f,empty:e,end:cur,cases:cs,peakIn:pk});if(pk>peak.v)peak={v:pk,day:d}}
-  const crates={total,inUseNow,crInUse,fillBis,emptyBis,days:crDays,peak,repJobs,filled:Object.values(fillH).reduce((a,v)=>a+v,0),emptied:Object.values(emptyH).reduce((a,v)=>a+v,0),repEnd:rt};
+  const crates={total,inUseNow,crInUse,fillBis,emptyBis,days:crDays,peak,repJobs,filled:Object.values(fillH).reduce((a,v)=>a+v,0),emptied:Object.values(emptyH).reduce((a,v)=>a+v,0),repEnd:rt,nrCases,nrCrates};
   return {UNC,manualLine,T0,crates,LG,order,info,bis,lines,plist,start,horizon,toTime,jit,asapWait,finalWait,totalShort:Object.values(bis).reduce((s,b)=>s+b.short,0),totalReq:Object.values(req).reduce((s,v)=>s+v,0)};
 }
 
@@ -962,7 +963,7 @@ function vCrates(C){
     <div class="kpi"><span class="l">In use now</span><span class="v num">${n0(K.inUseNow)}</span><span class="s">Holding ${n0(Object.values(C.LG.onHand).reduce((a,v)=>a+Math.max(0,v),0))} kg of stock</span></div>
     <div class="kpi"><span class="l">Available now</span><span class="v num" style="color:var(${avail!=null&&avail<0?'--bad':'--ink'})">${avail!=null?n0(avail):'—'}</span><span class="s">${T?'Owned − in use':'Enter crates owned'}</span></div>
     <div class="kpi"><span class="l">Filled by the plan</span><span class="v num">+${n0(K.filled)}</span><span class="s">Crates of new production</span></div>
-    <div class="kpi"><span class="l">Freed by repacking</span><span class="v num">−${n0(K.emptied)}</span><span class="s">Crates emptied as orders are packed</span></div>
+    <div class="kpi"><span class="l">Freed by repacking</span><span class="v num">−${n0(K.emptied)}</span><span class="s">${K.nrCases?`Only products with a repack rate · ${n0(K.nrCrates)} more not counted`:'Crates emptied as orders are packed'}</span></div>
     <div class="kpi"><span class="l">Most in use</span><span class="v num">${n0(K.peak.v)}</span><span class="s">${K.peak.day<0?'Now':fmtDay(addDays(C.start,K.peak.day))}${T?` · ${n0(T-K.peak.v)} spare`:''}</span></div>
   </section>`;
   const warn=!T?`<div class="ro-note">Enter the number of crates you own to see how many are free each day.</div>`:tight?`<div class="ro-note" style="background:var(--bad-soft);color:var(--bad)">Not enough crates on ${fmtDay(addDays(C.start,tight.day))}: the plan needs up to ${n0(tight.peakIn)} crates but you own ${n0(T)} (short ${n0(tight.peakIn-T)}). Repack sooner, or run the biscuits that are already packed first.</div>`:`<div class="ro-note" style="background:var(--ok-soft);color:var(--ok)">Enough crates for the whole plan. At least ${n0(minAvail)} stay free on the tightest day.</div>`;
@@ -976,12 +977,22 @@ function vCrates(C){
     return `<tr class="group"><td colspan="6">${lineDot(L.id)} ${L.name} <span class="muted" style="font:500 12px var(--mono);text-transform:none;letter-spacing:0">· ${n0(tIn)} in use · +${n0(tF)} to fill · −${n0(tE)} freed</span></td></tr>`+list.map(b=>{const i=K.crInUse[b.id],f=K.fillBis[b.id]||0,e=K.emptyBis[b.id]||0;
       return `<tr><td>${esc(b.name)}</td><td class="r num">${num(S.ref.crate[b.id])||b.crate}</td><td class="r num">${n0(i)}</td><td class="r num">${f>0.5?'+'+n0(f):'<span class="muted">0</span>'}</td><td class="r num">${e>0.5?'−'+n0(e):'<span class="muted">0</span>'}</td><td class="r num"><b>${n0(Math.max(0,i+f-e))}</b></td></tr>`}).join('')}).join('');
   const noRate=[...new Set(K.repJobs.filter(j=>!j.rate).map(j=>j.p.name))];
+  const exJ=K.repJobs.filter(j=>j.rate&&j.cases>0).sort((a,b)=>b.cases-a.cases)[0];
+  const exI=exJ&&C.info[exJ.p.id];
+  const how=exJ&&exI?`<section class="panel" style="gap:6px"><h3>How “freed by repacking” is worked out</h3>
+    <div style="font-size:13px">Each case packed uses a set weight of each biscuit (Pack contents). That weight ÷ the biscuit's kg per crate is the part of a crate emptied. Example, <b>${esc(exJ.p.name)}</b>, per case:</div>
+    <div class="tablebox"><table class="compact"><thead><tr><th>Biscuit</th><th class="r">Kg per case</th><th class="r">Kg per crate</th><th class="r">Crates per case</th></tr></thead><tbody>
+    ${Object.entries(exI.per).map(([b,kg])=>{const c=num(S.ref.crate[b])||(BIS[b]&&BIS[b].crate)||10;return `<tr><td>${esc(BIS[b]?BIS[b].name:b)}</td><td class="r num">${kg.toFixed(3)}</td><td class="r num">${c}</td><td class="r num">${(kg/c).toFixed(4)}</td></tr>`}).join('')}
+    <tr><td><b>Total</b></td><td class="r num"><b>${Object.values(exI.per).reduce((a,v)=>a+v,0).toFixed(2)}</b></td><td></td><td class="r num"><b>${exJ.cpc.toFixed(4)}</b></td></tr></tbody></table></div>
+    <div style="font-size:13px">${n0(exJ.cases)} cases × ${exJ.cpc.toFixed(4)} = <b>${n0(exJ.crates)} crates</b> emptied, spread over the hours the repack line spends on it at ${exJ.rate} cases/h. The total adds this up for every order that has a repacking rate. Partly used crates are counted as fractions, so the real number of empty crates can be a little lower.</div>
+    ${K.nrCases?`<div class="ro-note" style="background:var(--warn-soft,var(--accent-soft));color:var(--ink)"><b>Not counted:</b> ${n0(K.nrCases)} cases (about ${n0(K.nrCrates)} crates) of ${noRate.map(esc).join(', ')} have no repacking rate, so the planner can't tell when those crates come free. They stay “in use” here. Enter a rate in Data notes → Repacking to include them.</div>`:''}</section>`:'';
   return `<section class="toolbar"><div class="grp"><h2>Crates</h2><span class="muted">Crates in use = stock ÷ crate weight. Production fills crates; repacking empties them.</span></div></section>
   ${tiles}${warn}
   <section style="display:grid;gap:8px"><h2>Day by day</h2>
   <div class="tablebox"><table><thead><tr><th>Day</th><th class="r">In use at start</th><th class="r">Filled by production</th><th class="r">Freed by repacking</th><th class="r">Cases repacked</th><th class="r">In use at end</th><th class="r">Most in use</th><th class="r">Available (tightest)</th><th style="min-width:150px">In use vs owned</th></tr></thead>
   <tbody>${dayRows||'<tr class="dim"><td colspan="9">Nothing planned.</td></tr>'}</tbody></table></div>
-  <div class="legend"><span>Repacking starts as soon as stock covers an order and follows the rates on Data notes → Repacking, one order after another${K.repEnd?`, finishing ${fmtDay(addDays(C.start,Math.floor(K.repEnd/24)))}`:''}.${noRate.length?` No repacking rate for ${noRate.map(esc).join(', ')}, so their crates are freed as soon as the order is ready.`:''}</span></div></section>
+  <div class="legend"><span>Repacking starts as soon as stock covers an order and follows the rates on Data notes → Repacking, one order after another${K.repEnd?`, finishing ${fmtDay(addDays(C.start,Math.floor(K.repEnd/24)))}`:''}.${noRate.length?` Products with no repacking rate are not counted as freed (see below).`:''}</span></div></section>
+  ${how}
   <section style="display:grid;gap:8px"><h2>By biscuit</h2>
   <div class="tablebox"><table class="compact"><thead><tr><th>Biscuit</th><th class="r">Kg per crate</th><th class="r">In use now</th><th class="r">To fill</th><th class="r">Freed by repacking</th><th class="r">In use after plan</th></tr></thead><tbody>${bRows}</tbody></table></div></section>`;
 }
