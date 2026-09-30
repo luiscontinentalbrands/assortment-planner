@@ -165,6 +165,7 @@ ol.seq .why{grid-column:2/4;font-size:12px;color:var(--muted)}
 .rk{display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 4px;background:var(--ink);color:var(--bg);font:600 12px var(--mono);margin-right:4px}
 input.bignum{width:100%;max-width:240px;font:600 24px var(--mono);padding:6px 8px;text-align:left}
 input.locked-in,select.locked-in{background:transparent!important;border-color:transparent!important;color:var(--ink);opacity:1}
+tr.subgroup td{background:var(--surface);border-top:2px solid var(--rule);padding-top:10px;font-size:13px}
 [hidden]{display:none!important}
 body.locked .app{display:none}
 body:not(.locked) .login{display:none}
@@ -672,7 +673,9 @@ function vPlan(C){
       const dr=rows.filter(r=>r.day===d);const kg=dr.reduce((s,r)=>s+r.kg,0);
       const perLine=LINES.map(L=>{const h=dr.filter(r=>r.L===L).reduce((s,r)=>s+r.hours,0);return h?`${lineDot(L.id)} ${L.name} ${n1(h)} h`:''}).filter(Boolean).join(' &nbsp; ');
       body+=`<tr class="group"><td colspan="10">${fmtDay(addDays(C.start,d))} <span class="muted" style="font:500 12px var(--mono);text-transform:none;letter-spacing:0">· ${n0(kg)} kg · ${perLine}</span></td></tr>`;
-      body+=dr.map(r=>row(r)).join('');
+      LINES.forEach(L=>{const lr=dr.filter(r=>r.L===L);if(!lr.length)return;
+        body+=`<tr class="subgroup"><td colspan="10">${lineDot(L.id)} <b>${L.name}</b> <span class="muted num" style="font-size:12px">· ${lr.length} run${lr.length>1?'s':''} · ${n0(lr.reduce((a,r)=>a+r.kg,0))} kg · ${n1(lr.reduce((a,r)=>a+r.hours,0))} h</span></td></tr>`;
+        body+=lr.map(r=>row(r)).join('');});
     });
   } else {
     const byStock=(S.settings.runOrder||'stock')==='stock';
@@ -685,7 +688,7 @@ function vPlan(C){
   function row(r){return `<tr><td><span class="lname" style="font-size:14px">${r.rank?`<span class="rk">${r.rank}</span>`:''}${lineDot(r.L.id)}${r.L.name}</span></td><td>${esc(r.b.name)}${r.part?' <span class="muted" style="font-size:11px">(part)</span>':''}</td><td class="num">${r.from}</td><td class="num">${r.to}</td><td class="r num"><b>${n0(r.kg)}</b></td><td class="r num">${n1(r.hours)}</td><td class="r num">${n0(r.crates)}</td><td class="r num">${Math.round(Math.min(1,r.b.cover)*100)}%</td><td>${r.forP?esc(r.forP.name):''}</td><td>${r.wait>12?`<span class="chip warn">${n1(r.wait)} h</span>`:`<span class="num muted">${n1(r.wait)} h</span>`}</td></tr>`}
   return `<section class="toolbar">
     <div class="grp"><h2>Production plan</h2><span class="muted">${C.jit?'Just in time':'As soon as possible'} · starts ${fmtDay(C.start)} · ${n0(totKg)} kg in ${n1(totH)} line hours</span></div>
-    <div class="grp"><div class="days mode"><button data-pv="day" aria-pressed="${planView==='day'}">By day</button><button data-pv="run" aria-pressed="${planView==='run'}">By run</button></div>
+    <div class="grp"><div class="days mode"><button data-pv="day" aria-pressed="${planView==='day'}">By day</button><button data-pv="run" aria-pressed="${planView==='run'}">By line</button></div>
     <button class="btn primary" data-act="copy">Copy for Excel</button><span class="muted" id="copymsg" style="font-size:12px">${copyMsg}</span></div></section>
   <div class="tablebox"><table>
     <thead><tr><th>${planView==='run'?'Run # · Line':'Line'}</th><th>Biscuit</th><th>Start</th><th>Finish</th><th class="r">Kg</th><th class="r">Hours</th><th class="r">Crates</th><th class="r">Stock cover</th><th>For</th><th>Waits before packing</th></tr></thead>
