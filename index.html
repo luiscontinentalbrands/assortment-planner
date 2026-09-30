@@ -273,7 +273,7 @@ function defaults(){
   SEED.biscuits.forEach(b=>{stock[b.id]=b.stock;rates[b.id]=b.kgph;lineOf[b.id]=b.line});
   const ref={alt:{'saltine-wholewheat':['LASER'],'octagonal-poppy-seed':['LASER'],'finger':['POLIN'],'oval-de-vries':['POLIN'],'choco-rings-white-choc':['POLIN'],'choco-ring-dark':['POLIN']},repack:{},crate:{},pieceG:{},packs:JSON.parse(JSON.stringify(PACKS0))};
   SEED.products.forEach(p=>ref.repack[p.id]=p.repack||0);SEED.biscuits.forEach(b=>{ref.crate[b.id]=b.crate;ref.pieceG[b.id]=0});
-  return {orders,opening:{date:todayISO(),stock},rates,lineOf,log:{},ref,manual:{order:{},pin:{},kg:{},hrs:{},skip:{},line:{}},settings:{start:todayISO(),workDays:[1,2,3,4,5],lineDays:{FGC2:[1,2,3,4,5],POLIN:[0,1,2,3,4,5,6],WAFER:[1,2,3,4,5],FGC1:[1,2,3,4,5],LASER:[1,2,3,4,5,6],REPACK:[1,2,3,4,5]},hpd:{FGC2:24,POLIN:24,WAFER:24,FGC1:24,LASER:24},changeover:0,mode:'jit',buffer:2,runOrder:'stock',overPct:150,crates:0,repackHpd:24,eff:{FGC2:100,POLIN:100,WAFER:100,FGC1:100,LASER:100},shiftMax:{FGC2:{d:2,n:1},POLIN:{d:2,n:1},LASER:{d:2,n:1},WAFER:{d:0,n:0},FGC1:{d:0,n:0}}},onlyActive:true};
+  return {orders,opening:{date:todayISO(),stock},rates,lineOf,log:{},ref,manual:{order:{},pin:{},kg:{},hrs:{},skip:{},line:{},at:{}},settings:{start:todayISO(),workDays:[1,2,3,4,5],lineDays:{FGC2:[1,2,3,4,5],POLIN:[0,1,2,3,4,5,6],WAFER:[1,2,3,4,5],FGC1:[1,2,3,4,5],LASER:[1,2,3,4,5,6],REPACK:[1,2,3,4,5]},hpd:{FGC2:24,POLIN:24,WAFER:24,FGC1:24,LASER:24},changeover:0,mode:'jit',buffer:2,runOrder:'stock',overPct:150,crates:0,repackHpd:24,eff:{FGC2:100,POLIN:100,WAFER:100,FGC1:100,LASER:100},shiftMax:{FGC2:{d:2,n:1},POLIN:{d:2,n:1},LASER:{d:2,n:1},WAFER:{d:0,n:0},FGC1:{d:0,n:0}}},onlyActive:true};
 }
 function merge(base,src){
   const s=JSON.parse(JSON.stringify(base));
@@ -282,7 +282,7 @@ function merge(base,src){
   const op=src.opening||(src.stock?{date:(src.settings&&src.settings.start)||todayISO(),stock:src.stock}:null);
   if(op){ if(op.date) s.opening.date=op.date; if(op.stock) for(const id in op.stock) if(id in s.opening.stock) s.opening.stock[id]=op.stock[id]; }
   if(src.log) s.log=JSON.parse(JSON.stringify(src.log));
-  if(src.manual){const m=src.manual;s.manual={line:Object.assign({},m.line||{}),order:JSON.parse(JSON.stringify(m.order||{})),pin:Object.assign({},m.pin||{}),kg:Object.assign({},m.kg||{}),hrs:Object.assign({},m.hrs||{}),skip:Object.assign({},m.skip||{})}}
+  if(src.manual){const m=src.manual;s.manual={line:Object.assign({},m.line||{}),order:JSON.parse(JSON.stringify(m.order||{})),pin:Object.assign({},m.pin||{}),kg:Object.assign({},m.kg||{}),hrs:Object.assign({},m.hrs||{}),skip:Object.assign({},m.skip||{}),at:JSON.parse(JSON.stringify(m.at||{}))}}
   if(src.ref&&src.ref.alt) s.ref.alt=Object.assign({},s.ref.alt,JSON.parse(JSON.stringify(src.ref.alt)));
   if(src.ref) for(const k of ['repack','crate','pieceG','packs']) if(src.ref[k]) for(const id in src.ref[k]) if(id in s.ref[k]) s.ref[k][id]=(k==='packs'?Object.assign({},s.ref[k][id],src.ref[k][id]):src.ref[k][id]);
   if(src.settings){Object.assign(s.settings,src.settings);s.settings.hpd=Object.assign({},base.settings.hpd,src.settings.hpd||{});s.settings.lineDays=Object.assign({},base.settings.lineDays,src.settings.lineDays||{});s.settings.shiftMax=Object.assign({},base.settings.shiftMax,src.settings.shiftMax||{});s.settings.eff=Object.assign({},base.settings.eff,src.settings.eff||{})}
@@ -794,11 +794,32 @@ function impactHTML(C){
   const A=autoCompute();
   const impact=C.plist.filter(p=>p.I).map(p=>{const a=A.plist.find(q=>q.x.p.id===p.x.p.id);return {p,a:a&&a.packedAt,m:p.packedAt}}).filter(r=>r.p.uncovered||((r.a?r.a.abs:-1)!==(r.m?r.m.abs:-1)));
   const rows=impact.map(r=>{const d=r.a&&r.m?(r.m.abs-r.a.abs)/24:null;return `<tr${r.p.uncovered||(d>0.01)?' class="pos-short"':''}><td><b>${esc(r.p.x.p.name)}</b></td><td class="num" style="font-size:12px">${r.a?fmtWhen(r.a):'—'}</td><td class="num" style="font-size:12px"><b>${r.p.uncovered?'Not covered':r.m?fmtWhen(r.m):'—'}</b></td><td class="r num">${r.p.uncovered?`<span class="chip bad">short of ${r.p.uncBy.map(b=>esc(BIS[b].name)).join(', ')}</span>`:d==null?'':`<span style="color:var(${d>0?'--bad':'--ok'})">${d>0?'+':'−'}${n1(Math.abs(d))} days</span>`}</td></tr>`}).join('');
-  return `<section class="panel" style="gap:8px"><div class="toolbar"><h3>Your adjustments</h3><div class="grp">${confirmBtn('manreset','Back to automatic plan','Remove all adjustments?')}</div></div>
+  const adj=adjList(C), canEd=PERM.canPlan&&!readOnly;
+  const when=t=>t?new Date(t).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+  const list=`<div style="display:grid;gap:4px">${adj.map((a,i)=>`<div style="display:flex;gap:10px;align-items:center;justify-content:space-between;border-top:1px solid var(--rule-2);padding-top:4px"><span>${a.txt}${i===0?' <span class="chip">latest</span>':''}</span><span style="display:flex;gap:8px;align-items:center"><span class="muted num" style="font-size:11px">${when(a.t)}${a.by?' · '+esc(a.by):''}</span>${canEd?`<button class="btn" data-mundo="${esc(a.key)}">Undo</button>`:''}</span></div>`).join('')}</div>`;
+  return `<section class="panel" style="gap:8px"><div class="toolbar"><h3>Your adjustments <span class="muted" style="font-size:12px;text-transform:none;letter-spacing:0">· ${adj.length}</span></h3><div class="grp">${canEd&&adj.length?`<button class="btn" data-mundo="${esc(adj[0].key)}">Undo last</button>`:''}${confirmBtn('manreset','Back to automatic plan','Remove all adjustments?')}</div></div>
+  ${list}<h3 style="margin-top:6px">Effect on orders</h3>
   ${rows?`<div class="tablebox"><table class="compact"><thead><tr><th>Order</th><th>Automatic plan: packed by</th><th>With adjustments</th><th class="r">Change</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="muted">The adjustments do not change any order date.</div>'}</section>`;
 }
+const MKINDS=['order','pin','kg','hrs','skip','line'];
+// one entry per adjustment (kind:id) with when/who, so single adjustments can be undone
+function syncStamps(){const m=S.manual; if(!m) return; m.at=m.at||{}; const seen=new Set();
+  MKINDS.forEach(k=>Object.entries(m[k]||{}).forEach(([id,v])=>{const key=k+':'+id, j=JSON.stringify(v); seen.add(key);
+    const cur=m.at[key]; if(!cur||cur.v!==j){const me=window.ME||{}; m.at[key]={t:Date.now(),v:j,by:me.name||me.email||''}}}));
+  Object.keys(m.at).forEach(k=>{if(!seen.has(k))delete m.at[k]});}
+function adjList(C){syncStamps();const m=S.manual,out=[];
+  MKINDS.forEach(k=>Object.entries(m[k]||{}).forEach(([id,v])=>{const key=k+':'+id,a=m.at[key]||{t:0};const b=C.bis[id], nm=b?esc(b.name):esc(id);let txt='';
+    if(k==='order') txt=`<b>${LBY[id]?LBY[id].name:esc(id)}</b> run order changed`;
+    else if(k==='pin'){const [d,sh]=String(v).split('|');const dd=parseDate(d);txt=`<b>${nm}</b> starts ${dd?fmtDay(dd):esc(d)} ${/:/.test(sh||'')?esc(sh):sh==='n'?'night shift':'day shift'}`}
+    else if(k==='kg') txt=`<b>${nm}</b>: make ${n0(num(v))} kg${b?` <span class="muted">(suggested ${n0(b.autoShort)})</span>`:''}`;
+    else if(k==='hrs') txt=`<b>${nm}</b>: run ${n1(num(v))} h`;
+    else if(k==='skip'){if(!v)return;txt=`<b>${nm}</b> skipped`}
+    else if(k==='line') txt=`<b>${nm}</b> moved to ${LBY[v]?LBY[v].name:esc(v)}`;
+    out.push({key,t:a.t,by:a.by,txt})}));
+  return out.sort((x,y)=>y.t-x.t)}
+function undoAdj(key){const i=key.indexOf(':'),k=key.slice(0,i),id=key.slice(i+1);if(S.manual[k])delete S.manual[k][id];changed();render()}
 function hasManual(){const m=S.manual||{};return ['order','pin','kg','hrs','skip','line'].some(k=>m[k]&&Object.keys(m[k]).length)}
-function autoCompute(){const keep=S.manual;S.manual={order:{},pin:{},kg:{},hrs:{},skip:{},line:{}};let A;try{A=compute()}finally{S.manual=keep}return A}
+function autoCompute(){const keep=S.manual;S.manual={order:{},pin:{},kg:{},hrs:{},skip:{},line:{},at:{}};let A;try{A=compute()}finally{S.manual=keep}return A}
 let pending=null;
 function confirmBtn(key,label,q){
   if(pending===key) return `<span class="confirm">${q} <button class="btn danger" data-act="${key}-yes">Yes</button><button class="btn" data-act="cancel">No</button></span>`;
@@ -1100,7 +1121,7 @@ function vNotes(C){
 
 function applyPerms(){
   if(PERM.canPlan&&PERM.canLog) return;
-  $main.querySelectorAll('input,select,button[data-mode],button[data-ro],button[data-wd],button[data-mv],button[data-mreset],button[data-act="manreset"],button[data-act="reset"],button[data-act="clear"]').forEach(el=>{
+  $main.querySelectorAll('input,select,button[data-mode],button[data-ro],button[data-wd],button[data-mv],button[data-mreset],button[data-mundo],button[data-act="manreset"],button[data-act="reset"],button[data-act="clear"]').forEach(el=>{
     if(['entry-date','entryAll','packSel','printday'].includes(el.id)) return;
     const ok=(el.dataset.mk||el.dataset.pk)?PERM.canLog:PERM.canPlan;
     if(!ok){el.disabled=true;el.classList.add('locked-in')}
@@ -1112,7 +1133,7 @@ function restoreFocus(f){if(!f)return;const el=document.getElementById(f.id);if(
 
 /* ---------------- events ---------------- */
 let rt=null, lastInput=0;
-function changed(){dirty=true;clearTimeout(rt);rt=setTimeout(render,450);queueSave()}
+function changed(){syncStamps();dirty=true;clearTimeout(rt);rt=setTimeout(render,450);queueSave()}
 window.tabGo=t=>{tab=t;pending=null;try{history.replaceState(null,'','#'+t)}catch(_){}render()};
 document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.closest('button[data-t]');if(!b)return;tab=b.dataset.t;pending=null;try{history.replaceState(null,'','#'+tab)}catch(_){}render()});
 $main.addEventListener('input',e=>{
@@ -1161,6 +1182,7 @@ $main.addEventListener('click',e=>{
   if(b.dataset.sf){stockFilter=b.dataset.sf;render();return}
   if(b.dataset.mv){if(readOnly||!PERM.canPlan)return;const Lid=b.dataset.line,C0=compute();const ids=C0.lines[Lid].runs.map(r=>r.b.id);const i=ids.indexOf(b.dataset.mv),j=i+(+b.dataset.dir);if(i<0||j<0||j>=ids.length)return;[ids[i],ids[j]]=[ids[j],ids[i]];S.manual.order=S.manual.order||{};S.manual.order[Lid]=ids;changed();render();return}
   if(b.dataset.mrestore){if(readOnly||!PERM.canPlan)return;const id=b.dataset.mrestore;if(S.manual.skip)delete S.manual.skip[id];if(S.manual.kg)delete S.manual.kg[id];if(S.manual.hrs)delete S.manual.hrs[id];changed();render();return}
+  if(b.dataset.mundo){if(readOnly||!PERM.canPlan)return;undoAdj(b.dataset.mundo);return}
   if(b.dataset.mreset){if(readOnly||!PERM.canPlan)return;delete S.manual.order[b.dataset.mreset];changed();render();return}
   if(b.dataset.ev){entryView=b.dataset.ev;render();return}
   if(b.dataset.nv){notesView=b.dataset.nv;render();return}
@@ -1179,7 +1201,7 @@ $main.addEventListener('click',e=>{
   if(a==='cancel'){pending=null;render();return}
   if(a==='editplan'){editPlan=!editPlan;render();return}
   if(a==='manreset'){if(readOnly||!PERM.canPlan)return;pending=a;render();return}
-  if(a==='manreset-yes'){S.manual={order:{},pin:{},kg:{},hrs:{},skip:{},line:{}};pending=null;changed();render();return}
+  if(a==='manreset-yes'){S.manual={order:{},pin:{},kg:{},hrs:{},skip:{},line:{},at:{}};pending=null;changed();render();return}
   if(a==='clear'||a==='reset'){if(readOnly||!PERM.canPlan)return;pending=a;render();return}
   if(a==='clear-yes'){for(const id in S.orders){S.orders[id].cases=0}pending=null;S.onlyActive=false;changed();render();return}
   if(a==='reset-yes'){const keep=S.settings,lg=S.log;S=defaults();S.settings=keep;S.log=lg;pending=null;changed();render();return}
