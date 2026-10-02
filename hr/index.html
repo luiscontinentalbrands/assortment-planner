@@ -542,13 +542,14 @@ function localBanner(){
 
 /* ---------- Website mode: Firebase logins, data and files ---------- */
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyARe2fDFQDW3oXSkltSbyMLeHNqNhkLKow",
-  authDomain: "cbm-assortment-planner.firebaseapp.com",
-  databaseURL: "https://cbm-assortment-planner-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "cbm-assortment-planner",
-  storageBucket: "cbm-assortment-planner.firebasestorage.app",
-  messagingSenderId: "383613714402",
-  appId: "1:383613714402:web:5dd928558ca657585403bb"
+  /* SawariLodges Firebase project: paste the web app config here */
+  apiKey: "",
+  authDomain: "",
+  databaseURL: "",
+  projectId: "",
+  storageBucket: "",
+  messagingSenderId: "",
+  appId: ""
 };
 const FB_ROOT = "hrhub", FB_SDK = "https://www.gstatic.com/firebasejs/10.13.0/";
 const ROLE_NAMES = {admin:"Administrator", hr:"HR", staff:"Staff"};
@@ -612,6 +613,7 @@ async function fbCheckInit(){
 async function fbStart(){
   document.body.classList.add("fb"); state.fb = true;
   $("#authScreen").hidden = false;
+  if(!FIREBASE_CONFIG.apiKey){ $("#loginForm").hidden = true; authMsg("The HR Hub isn't connected to the SawariLodges Firebase project yet."); return; }
   try{
     const [A, U, D] = await Promise.all([import(FB_SDK + "firebase-app.js"), import(FB_SDK + "firebase-auth.js"), import(FB_SDK + "firebase-database.js")]);
     const app = A.initializeApp(FIREBASE_CONFIG);
@@ -2111,7 +2113,7 @@ document.addEventListener("submit", async ev => {
 
 /* ---------- Boot ---------- */
 (async function boot(){
-  if(!(window.claude && window.claude.use) && FIREBASE_CONFIG.apiKey){ fbStart(); return; }
+  if(!(window.claude && window.claude.use) && (FIREBASE_CONFIG.apiKey || /^https?:$/.test(location.protocol))){ fbStart(); return; }
   let db = null, user = null, dl = null, assets = null, sample = null;
   if(window.claude && window.claude.use){
     [db, user, dl, assets, sample] = await Promise.all([claude.use("db"), claude.use("user"), claude.use("downloads"), claude.use("assets"), claude.use("sample")]);
