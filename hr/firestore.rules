@@ -1,0 +1,40 @@
+rules_version = '2';
+// Sawari HR Hub: paste into Firebase console → Firestore Database → Rules → Publish
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function profile() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function active() { return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && profile().disabled != true; }
+    function isAdmin() { return active() && profile().role == 'admin'; }
+    function isHR() { return active() && (profile().role == 'admin' || profile().role == 'hr'); }
+    function initialized() { return exists(/databases/$(database)/documents/meta/app); }
+
+    match /meta/app {
+      allow read: if true;
+      allow create: if signedIn() && !initialized();
+      allow update, delete: if isAdmin();
+    }
+    match /users/{uid} {
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
+      allow create: if isAdmin() || (signedIn() && request.auth.uid == uid && !initialized() && request.resource.data.role == 'admin');
+      allow update, delete: if isAdmin();
+    }
+    match /requests/{uid} {
+      allow read, delete: if isAdmin();
+      allow create, update: if signedIn() && request.auth.uid == uid;
+    }
+    match /leave/{id} {
+      allow read: if active();
+      allow create: if isHR() || (active() && request.resource.data.status == 'Pending' && request.resource.data.submittedBy == request.auth.uid);
+      allow update: if isHR() || (active() && resource.data.submittedBy == request.auth.uid && resource.data.status == 'Pending' && request.resource.data.status == 'Cancelled');
+      allow delete: if isHR();
+    }
+    match /notices/{id} { allow read: if active(); allow write: if isHR(); }
+    match /settings/{id} { allow read: if active(); allow write: if isHR(); }
+    match /public/{id} { allow read: if active(); allow write: if isHR(); }
+    match /employees/{id} { allow read, write: if isHR(); }
+    match /advances/{id} { allow read, write: if isHR(); }
+    match /medical/{id} { allow read, write: if isHR(); }
+    match /files/{id} { allow read, write: if isHR(); }
+  }
+}

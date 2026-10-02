@@ -540,36 +540,49 @@ function localBanner(){
   return `<div class="banner" style="background:var(--sky-soft)"><span><b>Offline mode.</b> Records are saved in this browser on this computer only. Back up regularly, and open the app on claude.ai to share it with your team and to have IDs read automatically.</span><span class="actions"><button class="btn sm" data-act="backup">Back up data</button><label class="btn sm"><input type="file" class="vh" id="restoreFile" accept="application/json,.json">Restore backup</label></span></div>`;
 }
 
-/* ---------- Website mode: Firebase logins, data and files ---------- */
+/* ---------- Website mode: Firebase logins + Firestore (works offline, syncs when online) ---------- */
 const FIREBASE_CONFIG = {
   /* SawariLodges Firebase project: paste the web app config here */
   apiKey: "",
   authDomain: "",
-  databaseURL: "",
   projectId: "",
   storageBucket: "",
   messagingSenderId: "",
   appId: ""
 };
-const FB_ROOT = "hrhub", FB_SDK = "https://www.gstatic.com/firebasejs/10.13.0/";
+const FB_SDK = "https://www.gstatic.com/firebasejs/10.13.0/";
 const ROLE_NAMES = {admin:"Administrator", hr:"HR", staff:"Staff"};
 const FILE_CACHE = {}, PH = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
-let FB = null, fbBootstrapping = false;
+let FB = null, fbBootstrapping = false, fbPending = 0;
 const fbFriendly = e => {
   const c = (e && e.code) || "";
   if(/invalid-credential|wrong-password|user-not-found|invalid-login/.test(c)) return "Email or password is wrong.";
   if(/invalid-email/.test(c)) return "That email address is not valid.";
-  if(/email-already-in-use/.test(c)) return "This email already has a login. If they use the Assortment Planner, ask them to sign in to the HR Hub and press Ask for access.";
+  if(/email-already-in-use/.test(c)) return "This email already has a login. Ask them to sign in to the HR Hub and press Ask for access.";
   if(/weak-password/.test(c)) return "Password too weak: use at least 6 characters.";
   if(/too-many-requests/.test(c)) return "Too many tries. Wait a few minutes and try again.";
-  if(/network/.test(c)) return "No internet connection.";
+  if(/network|unavailable/.test(c)) return "No internet connection. Signing in for the first time needs internet.";
   if(/permission/i.test(c + (e && e.message))) return "Not allowed by the database rules.";
   return "Something went wrong (" + (c || (e && e.message)) + ").";
 };
+function syncStatus(){
+  const el = $("#syncPill"); if(!el) return;
+  const on = navigator.onLine;
+  el.className = "pill " + (!on ? "warn" : fbPending ? "acc" : "ok");
+  el.textContent = !on ? (fbPending ? `Offline · ${fbPending} change${fbPending==1?"":"s"} waiting` : "Offline · saved on this device") : (fbPending ? `Syncing ${fbPending} change${fbPending==1?"":"s"}…` : "Online · all synced");
+}
+addEventListener("online", syncStatus); addEventListener("offline", syncStatus);
+/* A write is applied on this device at once; the server copy follows when there is a connection. */
+function fbWrite(p){
+  fbPending++; syncStatus();
+  p.then(() => {}, e => { toast(/permission/i.test(String(e && (e.code || e.message))) ? "A change was refused by the database rules and has been undone." : "A change couldn't be saved to the server."); })
+   .finally(() => { fbPending = Math.max(0, fbPending - 1); syncStatus(); });
+  return Promise.resolve();
+}
 async function fileURL(id){
   if(FILE_CACHE[id]) return FILE_CACHE[id];
-  const s = await FB.get(FB.ref(FB.db, `${FB_ROOT}/${id.startsWith("pub_") ? "public" : "files"}/${id}`));
-  const v = s.val(); if(!v) return null; FILE_CACHE[id] = v.data; return v.data;
+  const s = await FB.F.getDoc(FB.F.doc(FB.fs, id.startsWith("pub_") ? "public" : "files", id));
+  if(!s.exists()) return null; FILE_CACHE[id] = s.data().data; return FILE_CACHE[id];
 }
 const fileLoading = new Set();
 function hydrateFiles(){
@@ -582,43 +595,52 @@ function hydrateFiles(){
 }
 new MutationObserver(() => { if(state.fb){ clearTimeout(hydrateFiles.t); hydrateFiles.t = setTimeout(hydrateFiles, 30); } }).observe(document.documentElement, {childList:true, subtree:true});
 function fbDB(){
-  const P = (c, id) => `${FB_ROOT}/data/${c}` + (id ? "/" + id : "");
-  const clean = v => JSON.parse(JSON.stringify(v));
-  const wrap = p => p.catch(e => { throw {code: /permission/i.test(String(e && (e.code || e.message))) ? "invalid_argument" : "unavailable"}; });
+  const F = FB.F, clean = v => JSON.parse(JSON.stringify(v));
   return { collection(c){ return {
-    doc(id){ id = id || uid(); return { id,
-      set: v => wrap(FB.set(FB.ref(FB.db, P(c, id)), clean(v))),
-      update: v => wrap(FB.update(FB.ref(FB.db, P(c, id)), clean(v))),
-      delete: () => wrap(FB.remove(FB.ref(FB.db, P(c, id)))) }; },
-    onSnapshot(cb, err){ return FB.onValue(FB.ref(FB.db, P(c)), sn => { const v = sn.val() || {}; const docs = Object.entries(v).map(([id, d]) => ({id, exists:true, data:() => d})); cb({docs, size:docs.length, empty:!docs.length}); }, e => err && err(e)); }
+    doc(id){ id = id || uid(); const r = F.doc(FB.fs, c, id); return { id,
+      set: v => fbWrite(F.setDoc(r, clean(v))),
+      update: v => fbWrite(F.updateDoc(r, clean(v))),
+      delete: () => fbWrite(F.deleteDoc(r)) }; },
+    onSnapshot(cb, err){ return F.onSnapshot(F.collection(FB.fs, c), sn => { const docs = sn.docs.map(d => ({id:d.id, exists:true, data:() => d.data()})); cb({docs, size:docs.length, empty:!docs.length}); }, e => err && err(e)); }
   }; } };
+}
+async function blobToDataURL(b){ return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(b); }); }
+async function recompress(blob, max, q){
+  try{ const bmp = await createImageBitmap(blob); const k = Math.min(1, max/Math.max(bmp.width,bmp.height)); const c = document.createElement("canvas"); c.width = Math.round(bmp.width*k); c.height = Math.round(bmp.height*k); c.getContext("2d").drawImage(bmp,0,0,c.width,c.height); return await new Promise(r => c.toBlob(b => r(b||blob), "image/jpeg", q)); }catch(e){ return blob; }
 }
 function fbAssets(){ return {
   async upload(blob, opts){
-    if(blob.size > 6e6) throw {code:"too_large"};
-    const data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
-    const pub = opts && opts.public, type = (opts && opts.type) || blob.type || "image/jpeg";
+    const pub = opts && opts.public; let type = (opts && opts.type) || blob.type || "image/jpeg";
+    if(blob.size > 700e3 && /^image\//.test(type) && type !== "image/png"){ blob = await recompress(blob, 1300, .72); if(blob.size > 700e3) blob = await recompress(blob, 1000, .62); type = "image/jpeg"; }
+    if(blob.size > 700e3) throw {code:"too_large"};
+    const data = await blobToDataURL(blob);
     const id = (pub ? "pub_" : "f_") + uid() + uid();
-    try{ await FB.set(FB.ref(FB.db, `${FB_ROOT}/${pub ? "public" : "files"}/${id}`), {type, data, size:blob.size, by:FB.auth.currentUser.uid, at:Date.now()}); }
-    catch(e){ throw {code: /permission/i.test(String(e && (e.code || e.message))) ? "upstream_auth" : "store_unavailable"}; }
+    await fbWrite(FB.F.setDoc(FB.F.doc(FB.fs, pub ? "public" : "files", id), {type, data, size:blob.size, by:FB.auth.currentUser.uid, at:Date.now()}));
     FILE_CACHE[id] = data; return {id, url:data, contentType:type, sizeBytes:blob.size};
   },
-  async delete(id){ try{ await FB.remove(FB.ref(FB.db, `${FB_ROOT}/${id.startsWith("pub_") ? "public" : "files"}/${id}`)); }catch(e){} delete FILE_CACHE[id]; return {deleted:true}; }
+  async delete(id){ fbWrite(FB.F.deleteDoc(FB.F.doc(FB.fs, id.startsWith("pub_") ? "public" : "files", id))); delete FILE_CACHE[id]; return {deleted:true}; }
 }; }
 function authMsg(t, ok){ const m = $("#lgMsg"); m.textContent = t || ""; m.className = "auth-msg" + (ok ? " ok" : ""); }
 async function fbCheckInit(){
-  let init = true; try{ init = (await FB.get(FB.ref(FB.db, FB_ROOT + "/meta/initialized"))).val() === true; }catch(e){ init = true; }
+  let init = true; try{ init = (await FB.F.getDoc(FB.F.doc(FB.fs, "meta", "app"))).exists(); }catch(e){ init = true; }
   $("#setupForm").hidden = init; $("#loginForm").hidden = !init; $("#reqBox").hidden = true;
+}
+function fbInstallable(){
+  if(!/^https?:$/.test(location.protocol)) return;
+  if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+  if(!document.querySelector('link[rel="manifest"]')){ const l = document.createElement("link"); l.rel = "manifest"; l.href = "manifest.json"; document.head.appendChild(l); }
 }
 async function fbStart(){
   document.body.classList.add("fb"); state.fb = true;
+  fbInstallable();
   $("#authScreen").hidden = false;
   if(!FIREBASE_CONFIG.apiKey){ $("#loginForm").hidden = true; authMsg("The HR Hub isn't connected to the SawariLodges Firebase project yet."); return; }
   try{
-    const [A, U, D] = await Promise.all([import(FB_SDK + "firebase-app.js"), import(FB_SDK + "firebase-auth.js"), import(FB_SDK + "firebase-database.js")]);
+    const [A, U, F] = await Promise.all([import(FB_SDK + "firebase-app.js"), import(FB_SDK + "firebase-auth.js"), import(FB_SDK + "firebase-firestore.js")]);
     const app = A.initializeApp(FIREBASE_CONFIG);
-    FB = {A, U, D, app, auth:U.getAuth(app), db:D.getDatabase(app), ref:D.ref, get:D.get, set:D.set, update:D.update, remove:D.remove, onValue:D.onValue};
-  }catch(e){ authMsg("Couldn't reach the sign-in service. Check the internet connection and reload."); return; }
+    let fs; try{ fs = F.initializeFirestore(app, {localCache:F.persistentLocalCache({tabManager:F.persistentMultipleTabManager()})}); }catch(e){ fs = F.getFirestore(app); }
+    FB = {A, U, F, app, auth:U.getAuth(app), fs};
+  }catch(e){ authMsg("The app couldn't start. Connect to the internet once and reload; after that it also works offline."); return; }
   try{ await FB.U.setPersistence(FB.auth, FB.U.browserLocalPersistence); }catch(e){}
   fbCheckInit();
   $("#loginForm").addEventListener("submit", async ev => {
@@ -639,15 +661,15 @@ async function fbStart(){
       let cred;
       try{ cred = await FB.U.createUserWithEmailAndPassword(FB.auth, email, pass); }
       catch(e){ if(/email-already-in-use/.test(e.code)) cred = await FB.U.signInWithEmailAndPassword(FB.auth, email, pass); else throw e; }
-      await FB.set(FB.ref(FB.db, `${FB_ROOT}/users/${cred.user.uid}`), {name, email:cred.user.email, role:"admin", disabled:false, createdAt:new Date().toISOString()});
-      await FB.set(FB.ref(FB.db, FB_ROOT + "/meta/initialized"), true);
+      await FB.F.setDoc(FB.F.doc(FB.fs, "users", cred.user.uid), {name, email:cred.user.email, role:"admin", disabled:false, createdAt:new Date().toISOString()});
+      await FB.F.setDoc(FB.F.doc(FB.fs, "meta", "app"), {initialized:true, by:cred.user.uid, at:new Date().toISOString()});
       fbBootstrapping = false; fbSignedIn(cred.user);
-    }catch(e){ fbBootstrapping = false; authMsg(/permission/i.test(String(e && (e.code || e.message))) ? "The database rules for the HR Hub haven't been added in Firebase yet. Add them (see the setup guide), then try again." : fbFriendly(e)); try{ await FB.U.signOut(FB.auth); }catch(_){} }
+    }catch(e){ fbBootstrapping = false; authMsg(/permission/i.test(String(e && (e.code || e.message))) ? "The Firestore rules for the HR Hub haven't been added yet. Add them (see the setup guide), then try again." : fbFriendly(e)); try{ await FB.U.signOut(FB.auth); }catch(_){} }
     $("#suGo").disabled = false;
   });
   $("#reqGo").addEventListener("click", async () => {
     const u = FB.auth.currentUser; if(!u) return;
-    try{ await FB.set(FB.ref(FB.db, `${FB_ROOT}/requests/${u.uid}`), {email:u.email, name:u.displayName || u.email.split("@")[0], at:new Date().toISOString()}); authMsg("Request sent. You can sign in once the administrator approves it.", true); }
+    try{ await FB.F.setDoc(FB.F.doc(FB.fs, "requests", u.uid), {email:u.email, name:u.displayName || u.email.split("@")[0], at:new Date().toISOString()}); authMsg("Request sent. You can sign in once the administrator approves it.", true); }
     catch(e){ authMsg(fbFriendly(e)); }
     try{ await FB.U.signOut(FB.auth); }catch(_){}
   });
@@ -658,11 +680,13 @@ async function fbStart(){
   });
 }
 async function fbSignedIn(u){
-  let prof = null, denied = false;
-  try{ prof = (await FB.get(FB.ref(FB.db, `${FB_ROOT}/users/${u.uid}`))).val(); }catch(e){ denied = true; }
+  let prof = null, denied = false; const ref = FB.F.doc(FB.fs, "users", u.uid);
+  try{ const s = await FB.F.getDoc(ref); prof = s.exists() ? s.data() : null; }
+  catch(e){ if(/permission/i.test(String(e && (e.code || e.message)))) denied = true; else { try{ const s = await FB.F.getDocFromCache(ref); prof = s.exists() ? s.data() : null; }catch(_){} } }
   if(!prof || prof.disabled){
-    if(denied){ authMsg("The HR Hub database rules haven't been added in Firebase yet. Add them (see the setup guide), then sign in again."); await FB.U.signOut(FB.auth); return; }
+    if(denied){ authMsg("The HR Hub Firestore rules haven't been added yet. Add them (see the setup guide), then sign in again."); await FB.U.signOut(FB.auth); return; }
     if(prof && prof.disabled){ authMsg("This account has been disabled. Ask the administrator."); await FB.U.signOut(FB.auth); return; }
+    if(!navigator.onLine){ authMsg("You're offline. The first sign-in on a device needs internet."); return; }
     $("#loginForm").hidden = true; $("#setupForm").hidden = true; $("#reqBox").hidden = false;
     authMsg("Your login works, but you haven't been given access to the HR Hub yet."); return;
   }
@@ -670,29 +694,31 @@ async function fbSignedIn(u){
   state.isAdmin = prof.role === "admin" || prof.role === "hr"; state.isUserAdmin = prof.role === "admin";
   state.db = fbDB(); state.assets = state.isAdmin ? fbAssets() : null; state.dl = localDownloads; state.sample = null; state.canRead = false;
   $("#authScreen").hidden = true;
-  FB.onValue(FB.ref(FB.db, `${FB_ROOT}/users/${u.uid}`), sn => { const p = sn.val(); if(!p || p.disabled){ FB.U.signOut(FB.auth); return; } if(p.role !== state.role) location.reload(); });
+  FB.F.onSnapshot(ref, sn => { const p = sn.data(); if(!p || p.disabled){ FB.U.signOut(FB.auth); return; } if(p.role !== state.role) location.reload(); }, () => {});
   if(state.isUserAdmin){
-    FB.onValue(FB.ref(FB.db, `${FB_ROOT}/users`), sn => { const v = sn.val() || {}; state.users = Object.entries(v).map(([id, p]) => Object.assign({uid:id}, p)); if(!sheet || !/Form$/.test(sheet.kind)) render(); }, () => {});
-    FB.onValue(FB.ref(FB.db, `${FB_ROOT}/requests`), sn => { const v = sn.val() || {}; state.requests = Object.entries(v).map(([id, p]) => Object.assign({uid:id}, p)); if(!sheet || !/Form$/.test(sheet.kind)) render(); }, () => {});
+    const rerender = () => { if(!sheet || !/Form$/.test(sheet.kind)) render(); };
+    FB.F.onSnapshot(FB.F.collection(FB.fs, "users"), sn => { state.users = sn.docs.map(d => Object.assign({uid:d.id}, d.data())); rerender(); }, () => {});
+    FB.F.onSnapshot(FB.F.collection(FB.fs, "requests"), sn => { state.requests = sn.docs.map(d => Object.assign({uid:d.id}, d.data())); rerender(); }, () => {});
   }
-  startData();
+  startData(); syncStatus();
 }
 const UM = {
   async create(d){
+    if(!navigator.onLine) return {ok:false, text:"Adding a person needs internet."};
     let sec = null;
     try{
       sec = FB.A.initializeApp(FIREBASE_CONFIG, "add-" + Date.now());
       const a2 = FB.U.getAuth(sec);
       const cred = await FB.U.createUserWithEmailAndPassword(a2, d.email, d.password);
       await FB.U.signOut(a2);
-      await FB.set(FB.ref(FB.db, `${FB_ROOT}/users/${cred.user.uid}`), {name:d.name, email:cred.user.email, role:d.role, disabled:false, createdAt:new Date().toISOString(), createdBy:FB.auth.currentUser.uid});
+      await FB.F.setDoc(FB.F.doc(FB.fs, "users", cred.user.uid), {name:d.name, email:cred.user.email, role:d.role, disabled:false, createdAt:new Date().toISOString(), createdBy:FB.auth.currentUser.uid});
       return {ok:true, text:"Added " + d.name + " as " + ROLE_NAMES[d.role] + ". Give them the link, their email and the temporary password."};
     }catch(e){ return {ok:false, text:fbFriendly(e)}; }
     finally{ if(sec){ try{ await FB.A.deleteApp(sec); }catch(_){} } }
   },
-  async approve(r, role){ try{ await FB.set(FB.ref(FB.db, `${FB_ROOT}/users/${r.uid}`), {name:r.name || r.email, email:r.email, role, disabled:false, createdAt:new Date().toISOString(), createdBy:FB.auth.currentUser.uid}); await FB.remove(FB.ref(FB.db, `${FB_ROOT}/requests/${r.uid}`)); toast("Access given to " + (r.name || r.email)); }catch(e){ toast(fbFriendly(e)); } },
-  async dismiss(r){ try{ await FB.remove(FB.ref(FB.db, `${FB_ROOT}/requests/${r.uid}`)); }catch(e){ toast(fbFriendly(e)); } },
-  async update(id, patch){ try{ await FB.update(FB.ref(FB.db, `${FB_ROOT}/users/${id}`), patch); toast("Saved"); }catch(e){ toast(fbFriendly(e)); } },
+  async approve(r, role){ fbWrite(FB.F.setDoc(FB.F.doc(FB.fs, "users", r.uid), {name:r.name || r.email, email:r.email, role, disabled:false, createdAt:new Date().toISOString(), createdBy:FB.auth.currentUser.uid})); fbWrite(FB.F.deleteDoc(FB.F.doc(FB.fs, "requests", r.uid))); toast("Access given to " + (r.name || r.email)); },
+  async dismiss(r){ fbWrite(FB.F.deleteDoc(FB.F.doc(FB.fs, "requests", r.uid))); },
+  async update(id, patch){ fbWrite(FB.F.updateDoc(FB.F.doc(FB.fs, "users", id), patch)); toast("Saved"); },
   async reset(email){ try{ await FB.U.sendPasswordResetEmail(FB.auth, email); toast("Password reset email sent to " + email); }catch(e){ toast(fbFriendly(e)); } },
   async changePw(cur, nw){ try{ const u = FB.auth.currentUser; await FB.U.reauthenticateWithCredential(u, FB.U.EmailAuthProvider.credential(u.email, cur)); await FB.U.updatePassword(u, nw); return {ok:true, text:"Password changed."}; }catch(e){ return {ok:false, text:fbFriendly(e)}; } }
 };
@@ -770,7 +796,7 @@ function renderNav(){
   renderBrand();
   $("#nav").innerHTML = navItems().map(([k,l,c]) => `<button class="${VIEW_HUE[k]}" data-nav="${k}" ${state.view===k?'aria-current="page"':''} aria-label="${l}"><span class="ic">${ICON[k]}</span><span class="lbl">${l}</span>${c?`<span class="count">${c}</span>`:""}</button>`).join("");
   const who = state.me && state.me.name ? state.me.name : "";
-  if(state.fb){ $("#railFoot").innerHTML = `<span>Signed in as <b>${esc((state.me&&state.me.name)||"")}</b></span><span>${esc(ROLE_NAMES[state.role]||"")}</span><span class="actions" style="margin-top:4px"><button class="btn sm" data-act="myAccount">My account</button><button class="btn sm" data-act="signOut">Sign out</button></span>`; return; }
+  if(state.fb){ $("#railFoot").innerHTML = `<span>Signed in as <b>${esc((state.me&&state.me.name)||"")}</b></span><span>${esc(ROLE_NAMES[state.role]||"")}</span><span id="syncPill" class="pill"></span><span class="actions" style="margin-top:4px"><button class="btn sm" data-act="myAccount">My account</button><button class="btn sm" data-act="signOut">Sign out</button></span>`; syncStatus(); return; }
   $("#railFoot").innerHTML = state.local ? `<span><b>Offline mode</b></span><span>Saved on this computer only</span>` : `${who?`<span>Signed in as <b>${esc(who)}</b></span>`:""}<span>${state.isAdmin ? "Full HR access" : "Staff access: leave and notices"}</span>`;
 }
 

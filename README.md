@@ -24,4 +24,8 @@ Production planning for the sweet and savoury assortments (FGC 2, Polin, Wafer, 
 
 # HR Hub (`/hr/`)
 
-Sawari Lodges HR app (employee files, leave, sick leave, advances, notices; Namibian Labour Act). It uses its **own Firebase project, SawariLodges**, not the Continental one. Setup and rules: `hr/database.rules.json`.
+Sawari Lodges HR app: employee files, leave, sick leave, advances and notices (Namibian Labour Act). It uses its **own Firebase project, SawariLodges** (Authentication + Firestore), not the Continental one.
+
+- Works offline: records are kept on each device and sync when the connection is back (Firestore offline cache); `hr/sw.js` keeps the app itself available offline. The first sign-in on a device needs internet.
+- Firestore security rules: `hr/firestore.rules`.
+- Roles: Administrator (everything + users), HR (all records), Staff (apply for leave, read notices).
